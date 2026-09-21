@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 报告安全漏洞
+    url: https://github.com/yanyu-1/agentmesh/security/advisories/new
+    about: 请勿开公开 issue。凭据泄漏、审批绕过、命令注入等请走私密渠道。
+  - name: 📖 使用手册
+    url: https://github.com/yanyu-1/agentmesh/blob/main/USAGE.md
+    about: 每条命令、每种接法、故障排查都在这里，比 README 详细得多。
+  - name: 🤝 参与开发
+    url: https://github.com/yanyu-1/agentmesh/blob/main/CONTRIBUTING.md
+    about: 环境要求、测试怎么跑、文档一致性约束、PR 流程。
+  - name: ✅ 验收记录
+    url: https://github.com/yanyu-1/agentmesh/blob/main/ACCEPTANCE.md
+    about: 什么被真机验证过、什么没有。62 条缺陷记录也在这里。

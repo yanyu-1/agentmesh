@@ -1,0 +1,1504 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AgentMesh 控制台</title>
+<style>
+  /* ---------------------------------------------------------------------------
+     Design tokens. Every colour is a variable so the light scheme below cannot be
+     half-done: a single hardcoded hex would survive into the wrong theme and look
+     broken. `prefers-color-scheme` picks the scheme, so the console follows the
+     desktop instead of forcing a dark page on someone who uses a light one.
+     --------------------------------------------------------------------------- */
+  :root {
+    color-scheme: dark;
+    --bg: #080b11;
+    --bg-grad:
+      radial-gradient(1100px 520px at 85% -10%, rgba(111, 157, 255, .09), transparent 60%),
+      radial-gradient(800px 480px at -8% -6%, rgba(62, 198, 243, .06), transparent 55%);
+    --panel: #10161f; --panel2: #151c27; --sunken: #0a0e15;
+    --header-bg: rgba(9, 12, 18, .82);
+    --line: #1f2937; --line2: #2c3a4f;
+    --fg: #e7ecf5; --label: #b7c1d3; --muted: #8591a6; --faint: #626d82;
+    --accent: #6f9dff; --accent2: #3ec6f3; --accent-soft: rgba(111, 157, 255, .14); --accent-fg: #081226;
+    --ok: #43d68a; --ok-soft: rgba(67, 214, 138, .12);
+    --warn: #ecbb45; --warn-soft: rgba(236, 187, 69, .12);
+    --err: #f47068; --err-soft: rgba(244, 112, 104, .12);
+    --chip: #1a2230; --btn: #1a2331; --btn-hover: #243144;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .28);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --bg: #eef1f7;
+      --bg-grad:
+        radial-gradient(1100px 520px at 85% -10%, rgba(47, 109, 246, .08), transparent 60%),
+        radial-gradient(800px 480px at -8% -6%, rgba(14, 165, 233, .06), transparent 55%);
+      --panel: #ffffff; --panel2: #f5f7fb; --sunken: #f1f4f9;
+      --header-bg: rgba(255, 255, 255, .82);
+      --line: #dde4ee; --line2: #c4cfe0;
+      --fg: #17202e; --label: #3c485c; --muted: #627089; --faint: #8a94a8;
+      --accent: #2f6df6; --accent2: #0ea5e9; --accent-soft: rgba(47, 109, 246, .12); --accent-fg: #ffffff;
+      --ok: #0f8a44; --ok-soft: rgba(15, 138, 68, .10);
+      --warn: #9a6a05; --warn-soft: rgba(154, 106, 5, .10);
+      --err: #d23636; --err-soft: rgba(210, 54, 54, .09);
+      --chip: #e9eef6; --btn: #e9eef6; --btn-hover: #dde4ef;
+      --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 10px 26px rgba(16, 24, 40, .07);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--fg);
+    background-color: var(--bg); background-image: var(--bg-grad); background-attachment: fixed;
+    /* A proportional face for the interface, monospace only where the content really is
+       code. A console that is monospace throughout reads as one grey block. */
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans SC",
+          "Microsoft YaHei", sans-serif;
+  }
+  code, #log, table, input, select, textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+  }
+  code { font-size: .92em; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+  ::selection { background: var(--accent-soft); }
+
+  /* ---- top bar ---------------------------------------------------------- */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--line);
+    background: var(--header-bg);
+    backdrop-filter: blur(14px) saturate(1.3);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  }
+  .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .logo {
+    width: 32px; height: 32px; flex: none; border-radius: 10px;
+    display: grid; place-items: center; color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    box-shadow: 0 2px 12px var(--accent-soft), inset 0 1px 0 rgba(255, 255, 255, .25);
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
+  .brand-text h1 { font-size: 15px; margin: 0; letter-spacing: .4px; font-weight: 700; }
+  .tagline { margin: 0; font-size: 11px; color: var(--faint); letter-spacing: .2px; }
+
+  .stats { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; align-items: center; }
+  .stat {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    background: var(--chip); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 11px; font-size: 11.5px; color: var(--muted); white-space: nowrap;
+  }
+  .stat b { color: var(--fg); font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* ---- page frame ------------------------------------------------------- */
+  main { display: grid; gap: 16px; padding: 18px; max-width: 1480px; margin: 0 auto; align-items: start; }
+  .cols { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .cols.wide-left { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+  .stack { display: grid; gap: 16px; align-content: start; min-width: 0; }
+  @media (max-width: 1080px) { .cols, .cols.wide-left { grid-template-columns: minmax(0, 1fr); } }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow: hidden; min-width: 0;
+    transition: border-color .15s ease;
+  }
+  .panel:hover { border-color: var(--line2); }
+  .panel > h2 {
+    margin: 0; padding: 12px 16px; font-size: 13px; font-weight: 650; color: var(--fg);
+    background: var(--panel2); border-bottom: 1px solid var(--line); letter-spacing: .3px;
+    display: flex; align-items: center; gap: 9px; list-style: none;
+  }
+  .pi { color: var(--accent); font-size: 13px; flex: none; }
+  .attn > h2 .pi { color: var(--warn); }
+  /* A panel that is a <details> (the node form): its summary wears the same header styling
+     as h2, and the ✚ rotates into a ✕ while the panel is open, so the affordance reads both ways. */
+  details.panel > summary {
+    margin: 0; padding: 12px 16px; font-size: 13px; font-weight: 650; color: var(--fg);
+    background: var(--panel2); letter-spacing: .3px; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 9px; list-style: none;
+  }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  details.panel[open] > summary { border-bottom: 1px solid var(--line); }
+  details.panel > summary .pi { transition: transform .18s ease; }
+  details.panel[open] > summary .pi { transform: rotate(45deg); }
+  /* A standalone utility. It used to be written as `.panel > summary .spacer`, which matched
+     nothing: the only summary that uses it belongs to `details.subpanel`, whose parent is the
+     <details>, not the .panel — so the chip never actually moved to the right edge. */
+  .spacer { margin-left: auto; }
+  .body { padding: 15px; display: grid; gap: 14px; }
+
+  /* ---- grouped form sections ---------------------------------------------
+     A <fieldset>/<legend> names the group; every control sits in a .field that keeps its
+     own label directly above it and its explanation directly below it, so a field is an
+     atomic unit that cannot drift apart however the grid wraps.
+     ------------------------------------------------------------------------- */
+  /* `fieldset` stays a plain block on purpose. Making it a grid/flex container is a known
+     cross-engine hazard: some browsers treat the <legend> as an ordinary grid item and drop
+     it out of the border box, which would break the group heading. The vertical rhythm is
+     put on the children instead, so nothing here depends on how an engine renders legends. */
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  fieldset[hidden], .is-hidden { display: none !important; }
+  legend {
+    display: block; width: 100%; padding: 0 0 8px; margin: 0 0 13px;
+    font-size: 11.5px; font-weight: 700; color: var(--accent);
+    letter-spacing: .8px; text-transform: uppercase; border-bottom: 1px solid var(--line);
+  }
+  /* The only group with two stacked blocks: the connection fields, then the password pair. */
+  #a-ssh-fields > .fields + #a-password { margin-top: 13px; }
+
+  .fields { display: grid; gap: 13px 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 1180px) { .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .fields { grid-template-columns: minmax(0, 1fr); } }
+  .span2 { grid-column: span 2; }
+  .span3 { grid-column: span 3; } .span4 { grid-column: 1 / -1; }
+  @media (max-width: 1180px) { .span3, .span4 { grid-column: 1 / -1; } }
+  @media (max-width: 640px) { .span2, .span3, .span4 { grid-column: auto; } }
+
+  .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .field > label, .field > .flabel { font-size: 12.5px; font-weight: 600; color: var(--label); }
+  /* When a control has focus its own label lights up. With twenty fields on screen this
+     is the single most effective "yes, this label is yours" cue there is. */
+  .field:focus-within > label, .field:focus-within > .flabel { color: var(--accent); }
+  /* A checkbox line inside a field is content, not a field caption, so it must not
+     inherit the caption weight. */
+  .field > label.check { font-size: 13px; font-weight: 400; }
+  .field > .sub { font-size: 11.5px; color: var(--faint); line-height: 1.45; }
+  .field > .sub b { color: var(--muted); font-weight: 600; }
+
+  input, select, textarea {
+    width: 100%; background: var(--sunken); color: var(--fg); font-size: 13px;
+    border: 1px solid var(--line2); border-radius: 8px; padding: 8px 10px;
+    transition: border-color .12s ease, box-shadow .12s ease;
+  }
+  input:hover, select:hover, textarea:hover { border-color: var(--muted); }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  input:disabled, select:disabled { opacity: .6; cursor: not-allowed; }
+  textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+
+  /* A checkbox belongs to the text beside it, so the whole line is the label. */
+  .check {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 13px;
+    color: var(--label); cursor: pointer; user-select: none;
+  }
+  .check input { width: auto; margin: 0; flex: none; accent-color: var(--accent); }
+
+  .actions { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+  button {
+    background: var(--btn); color: var(--fg); border: 1px solid var(--line2); border-radius: 8px;
+    padding: 7px 14px; font: inherit; font-size: 13px; cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, box-shadow .12s ease, transform .05s ease;
+  }
+  button:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--muted); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-color: transparent; color: var(--accent-fg); font-weight: 700;
+    box-shadow: 0 2px 12px var(--accent-soft);
+  }
+  button.primary:hover:not(:disabled) { filter: brightness(1.07); }
+  button.danger { color: var(--err); border-color: var(--err); background: transparent; }
+  button.danger:hover:not(:disabled) { background: var(--err-soft); border-color: var(--err); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .hint:empty { display: none; }
+  .hint.err { color: var(--err); }
+  .hint.ok { color: var(--ok); }
+  .empty { font-size: 12.5px; color: var(--faint); }
+
+  details.subpanel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
+  details.subpanel > summary {
+    padding: 10px 13px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--label);
+    display: flex; align-items: center; gap: 8px; list-style: none; border-radius: 10px;
+    transition: color .12s ease;
+  }
+  details.subpanel > summary:hover { color: var(--fg); }
+  details.subpanel > summary::-webkit-details-marker { display: none; }
+  details.subpanel > summary::before { content: "▸"; color: var(--accent); font-size: 11px; }
+  details.subpanel[open] > summary::before { content: "▾"; }
+  details.subpanel[open] > summary { border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }
+  details.subpanel > .body { padding: 13px; }
+  #a-advanced { border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
+  #a-advanced > summary {
+    padding: 10px 13px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--label);
+    list-style: none; transition: color .12s ease;
+  }
+  #a-advanced > summary:hover { color: var(--fg); }
+  #a-advanced > summary::-webkit-details-marker { display: none; }
+  #a-advanced > summary::before { content: "▸ "; color: var(--accent); }
+  #a-advanced[open] > summary::before { content: "▾ "; }
+  #a-advanced > div, #a-advanced > fieldset { padding: 13px; border-top: 1px solid var(--line); }
+
+  /* ---- chips and badges ---- */
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--chip); border: 1px solid var(--line); border-radius: 999px;
+    padding: 2px 10px; font-size: 11.5px; color: var(--muted); white-space: nowrap;
+  }
+  .chip.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+  .chip.err { color: var(--err); border-color: var(--err); background: var(--err-soft); }
+  .chip.ok::before, .chip.err::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    #conn.chip.ok::before { animation: pulse 2.2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  }
+  .badge {
+    display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 999px;
+    background: var(--chip); color: var(--muted); border: 1px solid var(--line);
+  }
+  .badge.completed { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+  .badge.failed { color: var(--err); background: var(--err-soft); border-color: transparent; }
+  .badge.working { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+  .badge.input-required { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+
+  /* ---- node cards ---- */
+  .node {
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px;
+    background: var(--panel2); display: grid; gap: 6px; transition: border-color .12s ease;
+  }
+  .node:hover { border-color: var(--line2); }
+  .node .top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .node .name { font-weight: 700; font-size: 13.5px; }
+  .node .meta { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .node .meta.err { color: var(--err); }
+  .node-actions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+  .node-actions button { padding: 3px 10px; font-size: 12px; border-radius: 7px; }
+  .dim { opacity: .72; }
+  .node .top .spacer { margin-left: auto; }
+
+  /* ---- chat ----------------------------------------------------------
+     The chat reads as a conversation: what you said sits on the right in an accent
+     bubble, the reply on the left in an ok-tinted card, and the agent's working is
+     folded between them into one quiet line that can be opened when needed. */
+  #ag-chat {
+    min-height: 200px; max-height: 52vh; overflow: auto;
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px; background: var(--sunken);
+    display: flex; flex-direction: column; gap: 9px;
+  }
+  #ag-chat:empty::before {
+    content: "还没有对话。在下面说一句话，本机这个 Agent 会自己决定派给哪个节点。";
+    color: var(--faint); font-size: 12.5px;
+  }
+  #ag-chat > div { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; }
+  #ag-chat .n { color: var(--muted); margin-right: 7px; font-size: 11px; font-weight: 700; letter-spacing: .4px; }
+  #ag-chat > div > .n {
+    display: block; margin: 0 0 2px; font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase;
+  }
+  #ag-chat > .ev-agent-user {
+    align-self: flex-end; max-width: 88%;
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: 12px 12px 4px 12px; padding: 7px 12px;
+  }
+  #ag-chat > .ev-agent-user .n { color: var(--accent); }
+  #ag-chat > .ev-agent-final, #ag-chat > .ev-agent-error {
+    align-self: stretch; border-radius: 12px 12px 12px 4px; padding: 9px 13px;
+  }
+  #ag-chat > .ev-agent-final { background: var(--ok-soft); border: 1px solid var(--ok); }
+  #ag-chat > .ev-agent-final .n { color: var(--ok); }
+  #ag-chat > .ev-agent-error { background: var(--err-soft); border: 1px solid var(--err); }
+  #ag-chat > .ev-agent-error .n { color: var(--err); }
+
+  /* One collapsible block per run. A run's thinking and tool traffic is what you want when
+     something goes wrong and noise when it does not, so it is folded away by default and the
+     reply stays visible. The summary is deliberately kept even when empty of shown lines: it
+     reports that the agent did something (n thoughts, n calls) without showing it. */
+  #ag-chat details.run {
+    align-self: stretch;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+    overflow: hidden;
+  }
+  #ag-chat details.run > summary {
+    list-style: none; cursor: pointer; padding: 6px 11px; font-size: 11.5px; color: var(--muted);
+    display: flex; align-items: center; gap: 6px; user-select: none;
+  }
+  #ag-chat details.run > summary:hover { color: var(--fg); }
+  #ag-chat details.run > summary::-webkit-details-marker { display: none; }
+  #ag-chat details.run > summary::before { content: "▸"; font-size: 10px; color: var(--accent); }
+  #ag-chat details.run[open] > summary::before { content: "▾"; }
+  #ag-chat details.run[open] > summary { border-bottom: 1px solid var(--line); }
+  #ag-chat details.run > .run-body { padding: 8px 11px; display: flex; flex-direction: column; gap: 5px; }
+  #ag-chat details.run .run-body > div { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }
+  #ag-chat .run-counts { color: var(--faint); }
+
+  /* ---- display options ---- */
+  .display-opts {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+    border-top: 1px solid var(--line); margin-top: 2px; padding-top: 12px;
+  }
+  .display-opts > .flabel { font-size: 12px; font-weight: 600; color: var(--label); }
+  .display-opts > .sub { flex-basis: 100%; margin: 0; font-size: 11.5px; color: var(--faint); }
+
+  /* ---- event log -------------------------------------------------------
+     A terminal, not a document: sunken, monospace, one event per line. */
+  #log {
+    height: min(48vh, 540px); overflow: auto; padding: 10px 14px; font-size: 12.5px;
+    background: var(--sunken);
+  }
+  #log > div { white-space: pre-wrap; word-break: break-word; padding: 1.5px 6px; border-radius: 5px; }
+  #log > div:hover { background: var(--panel2); }
+  .t { color: var(--faint); margin-right: 7px; }
+  .n { color: var(--muted); margin-right: 7px; }
+  .ok { color: var(--ok); } .err { color: var(--err); }
+  /* Event colours. The renderer builds the class as `'ev-' + ev.type`, so the two vocabularies
+     must line up exactly: a type with no rule here renders uncoloured, and a rule for a type
+     nothing emits can never appear. Both directions were wrong before this list was audited
+     against the code — there was no colour for plan / usage / approval-resolved /
+     agent-start / agent-final / agent-dispatch / agent-error / agent-result, and there were
+     rules for agent-done and agent-user, which nothing has ever emitted.
+     Cross-checked by test/ui-events.test.js against src/protocol/events.js (EventType) and the
+     `type: 'agent-…'` literals in src/core/orchestrator.js. */
+  .ev-task-created, .ev-session, .ev-task-state, .ev-done, .ev-agent-start, .ev-agent-dispatch { color: var(--accent); }
+  .ev-chunk { color: var(--fg); }
+  .ev-thought, .ev-agent-thought { color: var(--muted); font-style: italic; }
+  /* Streaming types carry the peer's own line breaks. A normal div collapses them into
+     spaces, which would silently reformat a pasted script or a table while it streams. */
+  .ev-chunk, .ev-thought { white-space: pre-wrap; }
+  .ev-tool-call, .ev-tool-update, .ev-plan, .ev-usage, .ev-agent-tool-call { color: var(--warn); }
+  .ev-approval-requested { color: var(--warn); font-weight: 700; }
+  .ev-approval-resolved { color: var(--ok); }
+  .ev-agent-final { color: var(--ok); font-weight: 600; }
+  .ev-agent-user { color: var(--accent); }
+  .ev-error, .ev-agent-error { color: var(--err); }
+  /* "Nothing is running and nothing will move until you answer." Not an error, not a success, and
+     the one state where the operator is the missing piece — so it has to out-shout both. */
+  .ev-needs-input {
+    color: var(--warn); font-weight: 600; white-space: pre-wrap;
+    border-left: 3px solid var(--warn); padding-left: 8px; margin-left: -11px;
+  }
+  .needs-input-hint { font-weight: 400; color: var(--muted); font-size: 11.5px; margin-top: 3px; }
+  .ev-agent-tool-result, .ev-log { color: var(--faint); }
+
+  /* ---- approvals ---- */
+  .approval {
+    border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 10px;
+    padding: 11px 13px; background: var(--panel2); display: grid; gap: 8px;
+  }
+  .approval .title { font-weight: 600; font-size: 13px; }
+  .approval .opts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ---- tasks table ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th {
+    color: var(--muted); font-weight: 700; background: var(--panel2); position: sticky; top: 0;
+    font-size: 11px; letter-spacing: .5px; text-transform: uppercase;
+  }
+  td { color: var(--label); }
+  tbody tr:hover td { background: var(--panel2); }
+  tbody tr:last-child td { border-bottom: 0; }
+  .tablewrap { max-height: 44vh; overflow: auto; }
+
+  /* Slim scrollbars for the scrolling regions, so the log does not grow a chunky grey bar. */
+  #log::-webkit-scrollbar, #ag-chat::-webkit-scrollbar, .tablewrap::-webkit-scrollbar { width: 8px; height: 8px; }
+  #log::-webkit-scrollbar-thumb, #ag-chat::-webkit-scrollbar-thumb, .tablewrap::-webkit-scrollbar-thumb {
+    background: var(--line2); border-radius: 8px;
+  }
+  #log::-webkit-scrollbar-track, #ag-chat::-webkit-scrollbar-track, .tablewrap::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  #log, #ag-chat, .tablewrap { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+
+  @media (max-width: 720px) {
+    header { gap: 10px; padding: 10px 12px; }
+    .tagline { display: none; }
+    main { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5.5" cy="12" r="2.3" /><circle cx="18.5" cy="5.5" r="2.3" /><circle cx="18.5" cy="18.5" r="2.3" /><path d="M7.6 11l8.8-4.4M7.6 13l8.8 4.4" /></svg></span>
+    <div class="brand-text">
+      <h1>AgentMesh</h1>
+      <p class="tagline">跨服务器智能体控制台</p>
+    </div>
+  </div>
+  <span class="chip" id="conn">connecting…</span>
+  <div class="stats">
+    <span class="stat"><b id="s-nodes">0</b>节点</span>
+    <span class="stat"><b id="s-tasks">0</b>任务</span>
+    <span class="stat"><b id="s-approvals">0</b>待审批</span>
+    <span class="stat"><b id="s-events">0</b>事件</span>
+  </div>
+  <button id="refresh" title="重新加载节点、任务和审批">⟳ 刷新</button>
+</header>
+
+<main>
+  <!-- ============ 主工作区：编排 Agent（主角） + 侧栏（待审批 / 节点） ============ -->
+  <div class="cols wide-left">
+    <div class="stack">
+      <section class="panel">
+        <h2><span class="pi">✦</span>编排 Agent · 说人话，它来派活<span class="spacer"></span><span class="chip" id="ag-model">…</span></h2>
+        <div class="body">
+          <div id="ag-hint" class="hint is-hidden"></div>
+          <div id="ag-chat"></div>
+          <div class="field">
+            <label for="ag-prompt">你要它做什么</label>
+            <textarea id="ag-prompt" placeholder="例如：让 nas 上的 Agent 写一个判断素数的 Python 函数，并把完整代码返回给我"></textarea>
+            <span class="sub">说人话就行——它自己判断该派给哪个节点，派发、等待、汇总都由它完成。<b>Enter</b> 发送，<b>Shift+Enter</b> 换行。</span>
+          </div>
+          <div class="actions">
+            <button class="primary" id="ag-send">交给它办</button>
+            <button id="ag-clear">清空对话</button>
+            <label class="check"><input type="checkbox" id="ag-dry" /> 只出方案不执行（dry-run）</label>
+            <label class="check"><input type="checkbox" id="ag-share" /> 跨节点共享上下文</label>
+          </div>
+
+          <div class="display-opts">
+            <span class="flabel">对话里显示什么</span>
+            <label class="check"><input type="checkbox" id="ag-show-thought" /> 思考过程</label>
+            <label class="check"><input type="checkbox" id="ag-show-tools" /> 工具调用与派发</label>
+            <span class="sub">都不勾时每轮只留一行「过程」摘要（可以点开看），回复内容始终显示。设置记在这个浏览器里。</span>
+          </div>
+
+          <details class="subpanel">
+            <summary>模型设置 <span class="spacer"></span><span class="chip" id="lc-state">…</span></summary>
+            <div class="body">
+              <div class="fields">
+                <div class="field span3">
+                  <label for="lc-base">API 地址</label>
+                  <input id="lc-base" placeholder="http://10.0.0.5:8000/v1" />
+                  <span class="sub">OpenAI 兼容的 <b>/chat/completions</b>，地址以 /v1 结尾；<b>留空 = 不改动</b></span>
+                </div>
+                <div class="field">
+                  <label for="lc-model">模型</label>
+                  <input id="lc-model" list="lc-models" placeholder="deepseek/deepseek-v4-pro" />
+                  <datalist id="lc-models"></datalist>
+                  <span class="sub"><b>留空 = 不改动</b>；点下面的「拉取模型列表」可以看到网关提供哪些模型</span>
+                </div>
+                <div class="field span3">
+                  <label for="lc-key">API 密钥</label>
+                  <input id="lc-key" type="password" placeholder="留空表示不改动" />
+                  <span class="sub">只存在服务进程内存里，<b>不会写进任何文件</b></span>
+                </div>
+                <div class="field">
+                  <label for="lc-keyenv">或：密钥的环境变量名</label>
+                  <input id="lc-keyenv" placeholder="MY_LLM_KEY" />
+                  <span class="sub">填<b>变量名</b>，重启后仍可用</span>
+                </div>
+              </div>
+              <div class="actions">
+                <button class="primary" id="lc-save">保存并测试连接</button>
+                <button id="lc-models-btn">拉取模型列表</button>
+                <button class="danger" id="lc-clear-key">清除内存中的密钥</button>
+                <label class="check"><input type="checkbox" id="lc-persist" checked /> 记住地址和模型（不含密钥）</label>
+              </div>
+              <div class="hint" id="lc-hint"></div>
+            </div>
+          </details>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel attn">
+        <h2><span class="pi">⚠</span>待审批<span class="spacer"></span><span class="chip" id="ap-count">0</span></h2>
+        <div class="body" id="approvals"><div class="empty">暂无</div></div>
+      </section>
+
+      <section class="panel">
+        <h2><span class="pi">⬡</span>节点</h2>
+        <div class="body" id="nodes"><div class="empty">加载中…</div></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ========================= 给指定节点发任务 ========================= -->
+  <section class="panel">
+    <h2><span class="pi">➤</span>给指定节点发任务</h2>
+    <div class="body">
+      <div class="fields">
+        <div class="field span2">
+          <label for="t-node">节点</label>
+          <select id="t-node"></select>
+          <span class="sub">直接派给这一个节点，不经过编排 Agent</span>
+        </div>
+        <div class="field">
+          <label for="t-approval">审批策略</label>
+          <select id="t-approval">
+            <option value="ask">ask（远程作答）</option>
+            <option value="deny">deny（默认拒绝）</option>
+            <option value="allow-once">allow-once</option>
+            <option value="allow-always">allow-always</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="flabel">会话</span>
+          <label class="check"><input type="checkbox" id="t-continue" /> 续接上次会话</label>
+          <label class="check"><input type="checkbox" id="t-share" /> 带上其他节点的最近往来</label>
+          <span class="sub">不勾时各节点互不可见（默认）。勾上会把<b>别的</b>节点最近几轮问答作为一段「共享上下文」放在本次任务前面，用于多个 Agent 协作同一件事。</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="t-prompt">任务内容</label>
+        <textarea id="t-prompt" placeholder="例如：列出当前目录的文件，并总结这个仓库是做什么的"></textarea>
+        <span class="sub">远端 agent 看不到你本地的上下文，<b>把需要的信息写全</b>。</span>
+      </div>
+      <div class="actions">
+        <button class="primary" id="t-send">发送</button>
+        <button id="t-cancel" disabled>取消当前任务</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= 注册 / 编辑节点 ========================= -->
+  <!-- The whole panel is a details element: the form is tall and only needed while a node is
+       being added or fixed, so it folds away. Clicking 编辑 on a node opens it (fillNodeForm). -->
+  <details class="panel" id="a-panel" open>
+    <summary><span class="pi">✚</span>注册 / 编辑节点<span class="spacer"></span><span class="chip" id="a-mode">新增</span></summary>
+    <div class="body">
+      <fieldset>
+        <legend>1 · 它是什么</legend>
+        <div class="fields">
+          <div class="field span2">
+            <label for="a-preset">节点预设</label>
+            <select id="a-preset"></select>
+            <span class="sub">决定默认的传输方式与启动命令</span>
+          </div>
+          <div class="field">
+            <label for="a-transport">传输方式</label>
+            <select id="a-transport">
+              <option value="acp">acp（stdio / ssh）</option>
+              <option value="a2a">a2a（HTTP）</option>
+              <option value="opencode">opencode（HTTP）</option>
+              <option value="cli">cli（命令行）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="a-name">节点名称</label>
+            <input id="a-name" placeholder="nas-hermes" />
+            <span class="sub">唯一标识，之后用 <b>mesh send 名称</b> 派活</span>
+          </div>
+        </div>
+        <div class="hint" id="a-preset-hint"></div>
+      </fieldset>
+
+      <fieldset id="a-http-fields" class="is-hidden">
+        <legend>2 · HTTP 端点</legend>
+        <div class="fields">
+          <div class="field span4">
+            <label for="a-url">地址（URL）</label>
+            <input id="a-url" placeholder="http://10.0.0.5:9900" />
+            <span class="sub">a2a 用 <b>/.well-known/agent-card.json</b> 发现能力；opencode 连它的 serve 端口</span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset id="a-ssh-fields">
+        <legend>2 · SSH 连接</legend>
+        <div class="fields">
+          <div class="field span2">
+            <label for="a-host">主机</label>
+            <input id="a-host" placeholder="10.0.0.5" />
+            <span class="sub">IP 或域名。<b>留空 = 就在本机运行</b></span>
+          </div>
+          <div class="field">
+            <label for="a-user">用户名</label>
+            <input id="a-user" placeholder="user" />
+          </div>
+          <div class="field">
+            <label for="a-port">SSH 端口</label>
+            <input id="a-port" placeholder="2222" />
+            <span class="sub">默认 22</span>
+          </div>
+          <div class="field span2">
+            <label for="a-command">远端命令</label>
+            <input id="a-command" placeholder="/opt/hermes/bin/hermes-acp" />
+            <span class="sub">可执行文件的完整路径，或 PATH 里的命令名</span>
+          </div>
+          <div class="field">
+            <label for="a-cwd">远端工作目录</label>
+            <input id="a-cwd" placeholder="/srv/work" />
+            <span class="sub">agent 在这里干活</span>
+          </div>
+          <div class="field">
+            <label for="a-authmode">SSH 认证方式</label>
+            <select id="a-authmode">
+              <option value="key">密钥 / agent（BatchMode，最安全）</option>
+              <option value="password">密码</option>
+            </select>
+          </div>
+        </div>
+        <div id="a-password" class="is-hidden">
+          <div class="fields">
+            <div class="field span2">
+              <label for="a-secret">SSH 密码</label>
+              <input id="a-secret" type="password" placeholder="只用于本次运行" />
+              <span class="sub">只存在服务进程内存里，<b>不会写进任何文件</b>；重启后要重填。<b>想让它跨重启保留，用右边那栏</b></span>
+            </div>
+            <div class="field span2">
+              <label for="a-pwenv">或：密码所在的环境变量名</label>
+              <input id="a-pwenv" placeholder="NAS_SSH_PW" />
+              <span class="sub">填<b>变量名</b>而不是密码（推荐）。先用一条命令把值存好：<br /><code>mesh secrets set NAS_SSH_PW</code><br />存在 <code>~/.agentmesh/secrets.env</code>（权限 0600，明文，靠文件权限保护），之后每次启动自动可用。</span>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <details id="a-advanced">
+        <summary>高级选项（审批策略 · 私钥 · 额外 ssh -o · 环境变量 · token）</summary>
+        <fieldset>
+          <div class="fields">
+            <div class="field">
+              <label for="a-approval">审批策略</label>
+              <select id="a-approval">
+                <option value="">（用预设默认）</option>
+                <option value="ask">ask（远程作答）</option>
+                <option value="deny">deny（默认拒绝）</option>
+                <option value="allow-once">allow-once</option>
+                <option value="allow-always">allow-always</option>
+              </select>
+              <span class="sub">agent 要授权时如何处理</span>
+            </div>
+            <div class="field span3">
+              <label for="a-keyfile">SSH 私钥文件</label>
+              <input id="a-keyfile" placeholder="C:\Users\me\.ssh\id_ed25519" />
+              <span class="sub">认证方式选「密钥」时才用</span>
+            </div>
+            <div class="field span2">
+              <label for="a-sshopt">额外 ssh -o 选项</label>
+              <textarea id="a-sshopt" placeholder="UserKnownHostsFile=C:\Users\me\.ssh\known_hosts&#10;StrictHostKeyChecking=accept-new"></textarea>
+              <span class="sub">一行一个 <b>关键字=值</b></span>
+            </div>
+            <div class="field span2">
+              <label for="a-env">节点环境变量</label>
+              <textarea id="a-env" placeholder="HERMES_HOME=/opt/hermes/data&#10;HOME=/opt/hermes/data"></textarea>
+              <span class="sub">一行一个 <b>K=V</b>，随远端命令一起送达</span>
+            </div>
+            <div class="field span2">
+              <label for="a-token">token</label>
+              <input id="a-token" type="password" placeholder="Bearer token" />
+              <span class="sub">仅 a2a / opencode 需要；<b>SSH 密码不要填这里</b></span>
+            </div>
+          </div>
+        </fieldset>
+      </details>
+
+      <div class="hint" id="a-hint"></div>
+      <div class="actions">
+        <button class="primary" id="a-add">添加节点</button>
+        <button id="a-cancel" class="is-hidden">取消编辑</button>
+      </div>
+    </div>
+  </details>
+
+  <!-- ========================= 事件 / 任务历史 ========================= -->
+  <div class="cols wide-left">
+    <section class="panel">
+      <h2><span class="pi">≡</span>实时事件<span class="spacer"></span><button id="log-clear">清空</button></h2>
+      <div id="log"></div>
+    </section>
+
+    <section class="panel">
+      <h2><span class="pi">▤</span>最近任务<span class="spacer"></span><button id="tasks-refresh">刷新</button></h2>
+      <div class="tablewrap">
+        <table id="tasks"><thead><tr><th>任务</th><th>节点</th><th>状态</th><th>提示词</th><th>时间</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+
+const $ = (id) => document.getElementById(id);
+let lastSeq = 0;
+let currentTask = null;
+const nodeNames = new Map();
+
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const text = await res.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
+  if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+  return body;
+}
+
+// ---------- nodes ----------
+// The form is transport-aware: an HTTP node needs a URL and nothing else, a remote
+// stdio node needs host/user/port/command. Showing every field at once is what let the
+// old form look complete while being unable to express a real SSH node at all — it had
+// no username, no port, and put the password into `token`, where ssh never looks.
+let editingNode = null;
+
+function linesOf(id) {
+  return $(id).value.split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
+function syncNodeForm() {
+  const t = $('a-transport').value;
+  const httpish = t === 'a2a' || t === 'opencode';
+  // Toggle two explicit containers rather than walking `parentElement` from each input:
+  // `$('a-url').parentElement` is the whole form body, so hiding "the URL field" that way
+  // hid the entire form — a bug that only shows up in a browser, which is exactly what
+  // nothing in this project was checking at the time.
+  $('a-http-fields').classList.toggle('is-hidden', !httpish);
+  $('a-ssh-fields').classList.toggle('is-hidden', httpish);
+  const remote = !httpish;
+  $('a-password').classList.toggle('is-hidden', !(remote && $('a-authmode').value === 'password'));
+  // A stdio node with no host runs on this machine; a blank command field looks forgotten
+  // rather than deliberate, so the placeholder says which of the two it is.
+  const localOnly = remote && !$('a-host').value.trim();
+  $('a-command').placeholder = localOnly
+    ? 'hermes-acp（本机可执行文件）'
+    : '/opt/hermes/bin/hermes-acp';
+  const presetMeta = $('a-preset').selectedOptions[0]?.dataset || {};
+  $('a-preset-hint').textContent = presetMeta.hint
+    ? `${presetMeta.hint}（预设只是帮你填好传输方式和默认命令，下面每一项都可以改）`
+    : '';
+}
+
+function applyPreset() {
+  const meta = $('a-preset').selectedOptions[0]?.dataset || {};
+  if (meta.transport) $('a-transport').value = meta.transport;
+  // Only fill the command when the user has not typed one, so switching presets on an
+  // edited node does not throw away a real path they entered.
+  const cmd = $('a-command');
+  if (meta.command && (!cmd.value.trim() || cmd.dataset.fromPreset === '1')) {
+    cmd.value = meta.command;
+    cmd.dataset.fromPreset = '1';
+  }
+  syncNodeForm();
+}
+
+$('a-transport').onchange = syncNodeForm;
+$('a-authmode').onchange = syncNodeForm;
+$('a-host').oninput = syncNodeForm;
+
+/** Build the API payload from the form. Secrets are sent in fields that never persist. */
+function nodeBodyFromForm() {
+  const t = $('a-transport').value;
+  const passwordMode = $('a-authmode').value === 'password';
+  /** @type {any} */
+  const body = {};
+  const name = $('a-name').value.trim();
+  if (name) body.name = name;
+  body.transport = t;
+  // `kind` is a display/label field that nothing reads when talking to an agent (see the
+  // note in registry.js), and only the presets can be picked from this list. A node registered as `generic-a2a` has
+  // no matching option, so `select.value` silently falls back to the FIRST preset — which
+  // would relabel an A2A node as `hermes` the moment you edited its port. It is therefore
+  // only sent when creating.
+  if (!editingNode) body.kind = $('a-preset').value;
+  if ($('a-approval').value) body.approvalPolicy = $('a-approval').value;
+  if (t === 'a2a' || t === 'opencode') {
+    body.url = $('a-url').value.trim();
+    body.local = undefined;
+    const token = $('a-token').value;
+    if (token) {
+      if (t === 'opencode') body.password = token; else body.token = token;
+    }
+    return body;
+  }
+  const host = $('a-host').value.trim();
+  body.local = !host;
+  if ($('a-command').value.trim()) body.command = $('a-command').value.trim();
+  if ($('a-cwd').value.trim()) body.cwd = $('a-cwd').value.trim();
+  const env = {};
+  for (const line of linesOf('a-env')) {
+    const eq = line.indexOf('=');
+    if (eq > 0) env[line.slice(0, eq)] = line.slice(eq + 1);
+  }
+  if (Object.keys(env).length) body.env = env;
+  if (host) {
+    /** @type {any} */
+    const ssh = { host };
+    if ($('a-user').value.trim()) ssh.user = $('a-user').value.trim();
+    if ($('a-port').value.trim()) ssh.port = Number($('a-port').value.trim());
+    if ($('a-keyfile').value.trim()) ssh.identityFile = $('a-keyfile').value.trim();
+    const opts = linesOf('a-sshopt');
+    if (opts.length) ssh.extraOptions = opts;
+    if ($('a-pwenv').value.trim()) ssh.passwordEnv = $('a-pwenv').value.trim();
+    // Password-only hosts cannot do BatchMode=yes.
+    if (passwordMode) ssh.batchMode = false;
+    body.ssh = ssh;
+  }
+  // Never `token`: an SSH password in `token` was persisted in cleartext AND ignored by
+  // the ssh path. This field is diverted to service memory and never written to disk.
+  if (passwordMode && host && $('a-secret').value) body.sshPassword = $('a-secret').value;
+  return body;
+}
+
+function fillNodeForm(n) {
+  editingNode = n.name;
+  $('a-mode').textContent = '编辑：' + n.name;
+  $('a-add').textContent = '保存修改';
+  $('a-cancel').classList.remove('is-hidden');
+  $('a-name').value = n.name;
+  $('a-name').disabled = true;
+  // `generic-a2a` (and anything else outside the preset list) has no option to select, so
+  // `select.value` would silently fall back to the first preset. Remember that here and
+  // say so after syncNodeForm(), which is what writes the hint.
+  const presetExists = [...$('a-preset').options].some((o) => o.value === n.kind);
+  if (presetExists) $('a-preset').value = n.kind;
+  $('a-transport').value = n.transport;
+  $('a-url').value = n.url || '';
+  $('a-host').value = n.ssh?.host || '';
+  $('a-user').value = n.ssh?.user || '';
+  $('a-port').value = n.ssh?.port || '';
+  $('a-command').value = n.command || '';
+  $('a-command').dataset.fromPreset = '0';
+  $('a-cwd').value = n.cwd || '';
+  $('a-keyfile').value = n.ssh?.identityFile || '';
+  $('a-sshopt').value = (n.ssh?.extraOptions || []).join('\n');
+  $('a-env').value = Object.entries(n.env || {}).map(([k, v]) => `${k}=${v}`).join('\n');
+  $('a-pwenv').value = n.ssh?.passwordEnv || '';
+  $('a-approval').value = n.approvalPolicy || '';
+  $('a-authmode').value = n.ssh && n.ssh.batchMode === false ? 'password' : 'key';
+  $('a-secret').value = '';
+  $('a-token').value = '';
+  // A node in edit mode is usually one you are trying to fix, so open the details.
+  if (n.ssh?.identityFile || n.ssh?.extraOptions || n.env || n.ssh?.passwordEnv) $('a-advanced').open = true;
+  $('a-hint').textContent = n.hasSshPassword
+    ? `当前 SSH 密码来源：${n.sshPasswordSource === 'env' ? '$' + n.ssh.passwordEnv : '本进程内存'}（留空则不改动）`
+    : n.ssh?.batchMode === false
+      ? '该节点需要密码，但当前拿不到——填一个密码，或指定环境变量名'
+      : '';
+  syncNodeForm();
+  // After syncNodeForm(), which owns the hint text.
+  if (!presetExists) {
+    $('a-preset-hint').textContent =
+      `此节点的产品标签是 ${n.kind}，不在预设列表里（预设只用于新建时填默认值）——编辑不会改动它。`;
+  }
+  // The form lives in a collapsible panel, so open it before scrolling — otherwise the scroll
+  // lands on a folded panel and the freshly filled-in form stays out of sight.
+  $('a-panel').open = true;
+  $('a-name').scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function resetNodeForm() {
+  editingNode = null;
+  $('a-mode').textContent = '新增';
+  $('a-add').textContent = '添加节点';
+  $('a-cancel').classList.add('is-hidden');
+  $('a-name').disabled = false;
+  for (const id of ['a-name', 'a-url', 'a-host', 'a-user', 'a-port', 'a-command', 'a-cwd', 'a-keyfile', 'a-sshopt', 'a-env', 'a-pwenv', 'a-secret', 'a-token']) $(id).value = '';
+  $('a-command').dataset.fromPreset = '1';
+  $('a-approval').value = '';
+  $('a-authmode').value = 'key';
+  $('a-advanced').open = false;
+  $('a-hint').textContent = '';
+  applyPreset();
+}
+
+async function loadNodes() {
+  const [nodes, presets] = await Promise.all([api('/api/nodes'), api('/api/presets')]);
+  const sel = $('a-preset');
+  if (!sel.options.length) {
+    for (const [name, p] of Object.entries(presets)) {
+      const o = document.createElement('option');
+      o.value = name; o.textContent = name + ' — ' + p.hint;
+      o.dataset.transport = p.transport; o.dataset.command = p.command || ''; o.dataset.url = p.url || ''; o.dataset.hint = p.hint;
+      sel.appendChild(o);
+    }
+    // "generic-acp" is the honest choice when the product is not in the list.
+    sel.value = 'generic-acp';
+    sel.onchange = applyPreset;
+    applyPreset();
+  }
+  $('s-nodes').textContent = nodes.length;
+  const tsel = $('t-node'); const prev = tsel.value;
+  tsel.innerHTML = '';
+  for (const n of nodes) {
+    const o = document.createElement('option');
+    o.value = n.name; o.textContent = n.name + ' (' + n.transport + ')';
+    tsel.appendChild(o);
+    nodeNames.set(n.name, n);
+  }
+  if (prev && nodeNames.has(prev)) tsel.value = prev;
+
+  $('nodes').innerHTML = nodes.length ? nodes.map((n) => {
+    const target = n.ssh
+      ? 'ssh://' + (n.ssh.user ? n.ssh.user + '@' : '') + n.ssh.host + (n.ssh.port ? ':' + n.ssh.port : '')
+      : (n.url || n.command || '-');
+    // Say out loud what will actually happen on connect. Silence here is what made the
+    // original failure take a screenshot to diagnose.
+    const warn = [];
+    if (n.ssh && !n.local && !n.ssh.user) warn.push('无用户名→用本机账号');
+    if (n.ssh && !n.local && !n.ssh.port) warn.push('无端口→22');
+    if (n.ssh && n.ssh.batchMode === false && !n.hasSshPassword) warn.push('需要密码但拿不到');
+    const auth = n.ssh
+      ? n.ssh.batchMode === false
+        ? (n.hasSshPassword ? (n.sshPasswordSource === 'env' ? `密码✓($${esc(n.ssh.passwordEnv)})` : '密码✓(内存)') : '密码✗')
+        : '密钥/agent'
+      : '';
+    return `
+    <div class="node">
+      <div class="top">
+        <span class="name">${esc(n.name)}</span>
+        <span class="chip">${esc(n.kind)}</span>
+        <span class="chip">${esc(n.transport)}</span>
+        <span class="chip" id="probe-${esc(n.name)}"></span>
+        <span class="node-actions">
+          <button data-edit="${esc(n.name)}">编辑</button>
+          <button data-probe="${esc(n.name)}">探测</button>
+          <button class="danger" data-del="${esc(n.id)}">删除</button>
+        </span>
+      </div>
+      <div class="meta">${esc(target)}${n.cwd ? ' · cwd=' + esc(n.cwd) : ''}${auth ? ' · ' + auth : ''}${n.hasToken ? ' · token✓' : ''}</div>
+      ${warn.length ? `<div class="meta err">⚠ ${esc(warn.join(' · '))}</div>` : ''}
+    </div>`;
+  }).join('') : '<div class="empty">还没有节点。用下面的表单或 <code>mesh node add</code> 添加。</div>';
+
+  document.querySelectorAll('[data-probe]').forEach((b) => b.onclick = () => probe(b.dataset.probe, b));
+  document.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => {
+    const n = nodeNames.get(b.dataset.edit);
+    if (n) fillNodeForm(n);
+  });
+  document.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+    if (!confirm('删除这个节点？')) return;
+    await api('/api/nodes/' + encodeURIComponent(b.dataset.del) + '/delete', { method: 'POST' });
+    loadNodes();
+  });
+}
+
+async function probe(name, btn) {
+  const chip = $('probe-' + name);
+  btn.disabled = true; chip.textContent = '探测中…'; chip.className = 'chip';
+  try {
+    const r = await api('/api/nodes/' + encodeURIComponent(name) + '/probe', { method: 'POST' });
+    if (r.summary) chip.textContent = r.summary.name + ' v' + r.summary.version;
+    else if (r.agentInfo) chip.textContent = (r.agentInfo.name || '?') + ' · ACP v' + r.protocolVersion;
+    else if (r.version) chip.textContent = r.title + ' ' + r.version;
+    else chip.textContent = 'ok';
+    chip.className = 'chip ok';
+    appendLog({ type: 'log', ts: new Date().toISOString(), nodeId: name, text: 'probe: ' + JSON.stringify(r).slice(0, 800) });
+  } catch (e) {
+    chip.textContent = '不可达'; chip.className = 'chip err';
+    // The whole reason ssh stderr is now kept: "不可达" alone is not actionable.
+    $('a-hint').textContent = String(e.message || e);
+    $('a-hint').className = 'hint err';
+    appendLog({ type: 'error', ts: new Date().toISOString(), nodeId: name, text: String(e.message || e) });
+  } finally { btn.disabled = false; }
+}
+
+$('a-cancel').onclick = resetNodeForm;
+
+$('a-add').onclick = async () => {
+  const body = nodeBodyFromForm();
+  if (!editingNode && !body.name) return alert('请填名称');
+  if (editingNode && body.name === undefined) body.name = editingNode;
+  try {
+    const hint = $('a-hint');
+    hint.className = 'hint';
+    if (editingNode) {
+      const saved = await api('/api/nodes/' + encodeURIComponent(editingNode) + '/update', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      hint.textContent = `已保存 ${saved.name}。` + (body.sshPassword ? '密码已放入本进程内存（重启 mesh serve 后需重填）。' : '');
+      resetNodeForm();
+    } else {
+      const created = await api('/api/nodes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      hint.textContent = `已添加 ${created.name}。` + (body.sshPassword ? '密码只在本进程内存里。' : '');
+      resetNodeForm();
+    }
+    loadNodes();
+  } catch (e) { alert('保存失败: ' + e.message); }
+};
+
+// ---------- orchestrator model config ----------
+async function loadLlmConfig() {
+  try {
+    const c = await api('/api/agent/config');
+    $('lc-base').value = c.baseUrl || '';
+    $('lc-model').value = c.model || '';
+    $('lc-keyenv').value = c.apiKeyEnv || '';
+    $('lc-state').textContent = c.ready ? (c.model || 'ready') : '未配置';
+    $('lc-state').className = 'chip ' + (c.ready ? 'ok' : 'err');
+    $('lc-hint').textContent = c.ready
+      ? (c.apiKey ? `密钥：${c.apiKey}（本进程内存）` : '当前没有密钥（有的网关不需要）')
+      : '缺 ' + (c.missing || []).join(', ') + ' —— 填好下面的地址和模型再保存。';
+    $('lc-hint').className = 'hint';
+  } catch (e) {
+    $('lc-state').textContent = '不可用';
+    $('lc-state').className = 'chip err';
+    $('lc-hint').textContent = String(e.message || e);
+  }
+}
+
+async function fetchModels() {
+  // The list is what you want *before* you know the model name, so this must work with the
+  // values currently in the form — it used to be a bare GET, which can only see saved
+  // settings, so pressing it after typing the address returned
+  // `LLM not configured: set AGENTMESH_LLM_BASE_URL …` and sent you looking for an
+  // environment variable instead of the one thing that was actually missing.
+  const baseUrl = $('lc-base').value.trim();
+  const hint = $('lc-hint');
+  if (!baseUrl) {
+    hint.className = 'hint err';
+    hint.textContent = '请先在上面填「API 地址」，再拉取模型列表。';
+    return;
+  }
+  hint.className = 'hint';
+  hint.textContent = '拉取中…';
+  const body = { baseUrl };
+  const model = $('lc-model').value.trim();
+  if (model) body.model = model;
+  const key = $('lc-key').value;
+  if (key) body.apiKey = key;                 // empty = use the key that is already configured
+  const env = $('lc-keyenv').value.trim();
+  if (env) body.apiKeyEnv = env;
+  try {
+    const r = await api('/api/agent/models', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const list = r.models || [];
+    $('lc-models').innerHTML = list.map((m) => `<option value="${esc(m)}"></option>`).join('');
+    hint.textContent = `拿到 ${list.length} 个模型，可在「模型」框里选择或直接输入。`;
+  } catch (e) {
+    hint.className = 'hint err';
+    hint.textContent = '拉取失败: ' + String(e.message || e);
+  }
+}
+
+$('lc-models-btn').onclick = fetchModels;
+
+$('lc-save').onclick = async () => {
+  // Only the fields that were actually filled in. Every box is sent on every save, so an
+  // empty box must mean "leave it alone" — otherwise saving the address and the key with the
+  // model box untouched blanks the model and the agent stops being able to run.
+  const body = { persist: $('lc-persist').checked };
+  const baseUrl = $('lc-base').value.trim();
+  if (baseUrl) body.baseUrl = baseUrl;
+  const model = $('lc-model').value.trim();
+  if (model) body.model = model;
+  const env = $('lc-keyenv').value.trim();
+  if (env) body.apiKeyEnv = env;
+  const key = $('lc-key').value;
+  if (key) body.apiKey = key;   // empty means "do not change", handled by omission
+  try {
+    const r = await api('/api/agent/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    $('lc-key').value = '';
+    const bits = [];
+    if (r.persisted) bits.push('地址/模型已写入 .agentmesh/llm.json（不含密钥）');
+    if (r.keyNote) bits.push('密钥：' + r.keyNote);
+    if (r.ready) {
+      try {
+        const m = await api('/api/agent/models');
+        bits.push(`连接成功，网关提供 ${(m.models || []).length} 个模型`);
+      } catch (e) { bits.push('连接测试失败: ' + String(e.message || e)); }
+    } else {
+      // Say what to do, not just what is absent. "还缺 model" left you looking at a field
+      // that appeared to be filled in already.
+      const missing = (r.missing || []).map((m) => (m === 'model' ? '模型（点上面的「拉取模型列表」挑一个，或直接输入名字）' : m));
+      bits.push('还缺 ' + missing.join('、'));
+    }
+    $('lc-hint').textContent = bits.join('；');
+    $('lc-hint').className = 'hint';
+    loadLlmConfig();
+    loadAgentConfig();
+  } catch (e) {
+    $('lc-hint').className = 'hint err';
+    $('lc-hint').textContent = '保存失败: ' + String(e.message || e);
+  }
+};
+
+$('lc-clear-key').onclick = async () => {
+  await api('/api/agent/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKey: '' }) });
+  $('lc-hint').textContent = '内存中的密钥已清除。';
+  loadLlmConfig();
+};
+
+// ---------- send ----------
+$('t-send').onclick = async () => {
+  const node = $('t-node').value;
+  const prompt = $('t-prompt').value.trim();
+  if (!node) return alert('先添加/选择节点');
+  if (!prompt) return alert('请输入任务');
+  try {
+    const r = await api('/api/send', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        node,
+        prompt,
+        continue: $('t-continue').checked,
+        shareContext: $('t-share').checked,
+        approval: $('t-approval').value,
+      }) });
+    currentTask = r.taskId;
+    $('t-cancel').disabled = !currentTask;
+    appendLog({ type: 'task-created', ts: new Date().toISOString(), nodeId: node, taskId: r.taskId, text: 'dispatched: ' + prompt });
+    $('t-prompt').value = '';
+    loadTasks();
+  } catch (e) { alert('发送失败: ' + e.message); }
+};
+
+$('t-cancel').onclick = async () => {
+  if (!currentTask) return;
+  try { await api('/api/cancel', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ taskId: currentTask }) }); }
+  catch (e) { alert('取消失败: ' + e.message); }
+  $('t-cancel').disabled = true;
+};
+
+// ---------- approvals ----------
+async function loadApprovals() {
+  let rows = [];
+  try { rows = await api('/api/approvals'); } catch { rows = []; }
+  $('s-approvals').textContent = rows.length;
+  $('ap-count').textContent = rows.length;
+  const box = $('approvals');
+  if (!rows.length) { box.innerHTML = '<div class="empty">暂无</div>'; return; }
+  box.innerHTML = rows.map((a) => `
+    <div class="approval">
+      <div class="title">${esc(a.title)}</div>
+      <div class="hint">${esc(a.nodeId)} · ${esc(a.createdAt)} ${a.live ? '' : '· <b>无活动连接</b>'}</div>
+      <div class="opts">
+        ${(a.options || []).map((o) => `<button data-ap="${esc(a.id)}" data-opt="${esc(o.optionId)}">${esc(o.name || o.kind)}</button>`).join('')}
+        <button class="danger" data-ap="${esc(a.id)}" data-opt="">拒绝</button>
+      </div>
+    </div>`).join('');
+  document.querySelectorAll('[data-ap]').forEach((b) => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      await api('/api/approvals/' + encodeURIComponent(b.dataset.ap), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ optionId: b.dataset.opt || null }) });
+    } catch (e) { alert('作答失败: ' + e.message); }
+    loadApprovals();
+  });
+}
+
+// ---------- tasks ----------
+async function loadTasks() {
+  let rows = [];
+  try { rows = await api('/api/tasks?limit=25'); } catch { rows = []; }
+  $('s-tasks').textContent = rows.length;
+  const tb = $('tasks').querySelector('tbody');
+  tb.innerHTML = rows.map((t) => `<tr>
+    <td title="${esc(t.id)}">${esc(t.id.replace('task_','').slice(0,10))}</td>
+    <td>${esc(nodeNames.get(t.nodeId)?.name || t.nodeId.slice(0,8))}</td>
+    <td><span class="badge ${esc(t.state)}">${esc(t.state)}</span></td>
+    <td title="${esc(t.result || t.error || '')}">${esc((t.prompt||'').slice(0,60))}</td>
+    <td>${esc((t.createdAt||'').slice(11,19))}</td>
+  </tr>`).join('') || '<tr><td colspan="5" class="empty">暂无任务</td></tr>';
+}
+
+// ---------- local orchestrator agent ----------
+// The agent's reasoning is a live stream, not a stored transcript: `scope:'agent'`
+// events arrive on the same SSE connection as node events and are rendered here. The
+// durable record of what the agent actually DID is the dispatched task, which shows up
+// in 最近任务 exactly like a hand-typed one.
+let agentBusy = false;
+
+async function loadAgentConfig() {
+  try {
+    const cfg = await api('/api/agent/config');
+    $('ag-model').textContent = cfg.ready ? `${cfg.model}` : '未配置';
+    $('ag-model').className = 'chip ' + (cfg.ready ? 'ok' : 'err');
+    const hint = $('ag-hint');
+    if (cfg.ready) {
+      hint.classList.add('is-hidden');
+    } else {
+      hint.classList.remove('is-hidden');
+      hint.innerHTML = `编排 Agent 还没配置模型（缺 ${esc((cfg.missing || []).join(', '))}）。` +
+        `设置 <code>AGENTMESH_LLM_BASE_URL</code> / <code>AGENTMESH_LLM_MODEL</code> 后重启服务，` +
+        `或命令行执行 <code>mesh agent save --base-url … --model …</code>。`;
+    }
+    return cfg;
+  } catch {
+    $('ag-model').textContent = '不可用';
+    $('ag-model').className = 'chip err';
+    return null;
+  }
+}
+
+// Which event types are "process" — the agent working — as opposed to something the person
+// asked for or is waiting to read. Process events are folded into one block per run; replies stay
+// out of it and are always visible. This list must equal the `agent-*` types the orchestrator and
+// src/web/server.js emit as progress, and test/ui-events.test.js checks that it does.
+const AGENT_PROCESS_TYPES = ['agent-thought', 'agent-tool-call', 'agent-tool-result', 'agent-dispatch'];
+const AGENT_STREAM_TYPES = { 'agent-thought': '思考', 'agent-tool-call': '调用', 'agent-tool-result': '结果', 'agent-dispatch': '派发' };
+
+// Per-browser display preferences. Kept in localStorage rather than on the server: this is how one
+// person likes to read the panel, not a property of the fleet, and it should not follow the
+// settings into another browser.
+const DISPLAY_KEY = 'agentmesh.display';
+function displayOptions() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(DISPLAY_KEY) || '{}') || {}; } catch { saved = {}; }
+  return { thought: Boolean(saved.thought), tools: Boolean(saved.tools) };
+}
+function saveDisplayOptions(opts) {
+  try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(opts)); } catch { /* private mode, or full */ }
+}
+/** Is this specific process event type currently switched on? */
+function processVisible(type, opts) {
+  if (type === 'agent-thought') return opts.thought;
+  return opts.tools;
+}
+
+// The run currently being written, so process events land in its block. Reset on `agent-start`.
+/** @type {{el:HTMLElement, body:HTMLElement, summary:HTMLElement, counts:Record<string, number>}|null} */
+let openRun = null;
+
+/**
+ * Fold one orchestrator event into the chat panel.
+ *
+ * A run's thinking and tool traffic is exactly what you want when something goes wrong and pure
+ * noise when it does not, so it goes into a collapsed `<details>` while the reply stays outside it.
+ * The block is created on `agent-start` and the summary keeps counting even for types the user has
+ * switched off — "过程 · 思考 6 · 调用 3" is information, and dropping it entirely would leave no
+ * sign that the agent did anything at all before answering.
+ */
+function appendAgent(ev) {
+  const chat = $('ag-chat');
+  const body = (t) => esc(String(t == null ? '' : t));
+  const opts = displayOptions();
+  const type = String(ev.type || '');
+
+  if (type === 'agent-start') {
+    const el = document.createElement('details');
+    el.className = 'run';
+    const summary = document.createElement('summary');
+    const counts = document.createElement('span');
+    counts.className = 'run-counts';
+    summary.innerHTML = `<span>过程</span>`;
+    summary.appendChild(counts);
+    const box = document.createElement('div');
+    box.className = 'run-body';
+    const head = document.createElement('div');
+    head.className = 'ev-agent-start';
+    head.innerHTML = `<span class="n">agent</span><span class="dim">开始 · 模型 ${body(ev.data && ev.data.model)}` +
+      `${ev.data && ev.data.dryRun ? ' · DRY RUN' : ''} · 节点 ${body(((ev.data && ev.data.nodes) || []).join(', ') || '(无)')}` +
+      `${ev.data && ev.data.shareContext ? ' · 共享上下文' : ''}</span>`;
+    box.appendChild(head);
+    el.appendChild(summary);
+    el.appendChild(box);
+    chat.appendChild(el);
+    openRun = { el, body: box, summary: counts, counts: {} };
+    updateRunSummary();
+    chat.scrollTop = chat.scrollHeight;
+    return;
+  }
+
+  if (type === 'agent-final' || type === 'agent-error') {
+    // Always visible, and outside the fold: this is the part the person is waiting for.
+    openRun = null;
+    const div = document.createElement('div');
+    div.className = 'ev-' + type;
+    div.innerHTML =
+      type === 'agent-final'
+        ? `<span class="n">答复</span><span class="ok">${body(ev.text)}</span>`
+        : `<span class="n">错误</span><span class="err">${body(ev.text)}</span>`;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return;
+  }
+
+  if (AGENT_PROCESS_TYPES.includes(type)) {
+    // Count it whatever the settings say, so the folded summary still reports the work.
+    const run = openRun ?? newRunFor(chat);
+    run.counts[type] = (run.counts[type] || 0) + 1;
+    updateRunSummary();
+    if (!processVisible(type, opts)) return;
+    const div = document.createElement('div');
+    div.className = 'ev-' + type;
+    if (type === 'agent-thought') {
+      div.innerHTML = `<span class="n">思考</span><span class="dim">${body(ev.text)}</span>`;
+    } else if (type === 'agent-tool-call') {
+      div.innerHTML = `<span class="n">调用</span><b>${body(ev.text)}</b> ${body(JSON.stringify((ev.data && ev.data.args) || {}))}`;
+    } else if (type === 'agent-tool-result') {
+      div.innerHTML = `<span class="n">结果</span><span class="dim">${body(String((ev.data && ev.data.result) || '').slice(0, 400))}</span>`;
+    } else {
+      div.innerHTML = `<span class="n">派发</span>${body((ev.data && ev.data.node) + ' ' + (ev.data && ev.data.state))}`;
+    }
+    run.body.appendChild(div);
+    if (run.el.open) chat.scrollTop = chat.scrollHeight;
+    return;
+  }
+
+  if (type === 'agent-user') {
+    openRun = null;
+    const div = document.createElement('div');
+    div.className = 'ev-agent-user';
+    div.innerHTML = `<span class="n">你</span>${body(ev.text)}`;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
+}
+
+/** A run block for a process event that arrived with no `agent-start` (a resumed stream). */
+function newRunFor(chat) {
+  const el = document.createElement('details');
+  el.className = 'run';
+  const summary = document.createElement('summary');
+  const counts = document.createElement('span');
+  counts.className = 'run-counts';
+  summary.innerHTML = `<span>过程</span>`;
+  summary.appendChild(counts);
+  const box = document.createElement('div');
+  box.className = 'run-body';
+  el.appendChild(summary);
+  el.appendChild(box);
+  chat.appendChild(el);
+  openRun = { el, body: box, summary: counts, counts: {} };
+  return openRun;
+}
+
+/** Rewrite the folded summary from the counters, so it stays true for hidden types too. */
+function updateRunSummary() {
+  if (!openRun) return;
+  const parts = Object.entries(openRun.counts).map(([type, n]) => `${AGENT_STREAM_TYPES[type] ?? type} ${n}`);
+  openRun.summary.textContent = parts.length ? ` · ${parts.join(' · ')}` : ' · 无输出';
+}
+
+async function sendAgent() {
+  const prompt = $('ag-prompt').value.trim();
+  if (!prompt || agentBusy) return;
+  agentBusy = true;
+  $('ag-send').disabled = true;
+  appendAgent({ type: 'agent-user', text: prompt });
+  $('ag-prompt').value = '';
+  try {
+    await api('/api/agent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt, dryRun: $('ag-dry').checked, shareContext: $('ag-share').checked }),
+    });
+  } catch (e) {
+    appendAgent({ type: 'agent-error', text: e.message });
+    agentBusy = false;
+    $('ag-send').disabled = false;
+  }
+}
+
+$('ag-send').onclick = sendAgent;
+$('ag-clear').onclick = () => { $('ag-chat').innerHTML = ''; openRun = null; };
+
+// ---------- display options ----------
+function loadDisplayOptions() {
+  const opts = displayOptions();
+  $('ag-show-thought').checked = opts.thought;
+  $('ag-show-tools').checked = opts.tools;
+}
+function storeDisplayOptions() {
+  saveDisplayOptions({ thought: $('ag-show-thought').checked, tools: $('ag-show-tools').checked });
+}
+$('ag-show-thought').onchange = storeDisplayOptions;
+$('ag-show-tools').onchange = storeDisplayOptions;
+$('ag-prompt').addEventListener('keydown', (e) => {
+  // Enter sends, shift+enter newlines — the shape people expect from a chat box.
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAgent(); }
+});
+
+// ---------- live log ----------
+
+// A streamed run emits one event per fragment, and ACP fragments can be a single character
+// (`agent_message_chunk` in src/core/adapters/acp.js). Giving each one its own line turned a
+// paragraph into hundreds of lines of one letter each, so the panel was unreadable exactly
+// when the interesting thing — a long answer arriving — was happening.
+//
+// Only `chunk` and `thought` stream; every other event is a complete statement and starts a
+// line. This list must equal STREAMED_EVENTS in src/protocol/events.js — test/ui-events.test.js
+// compares the two, so a new streaming type cannot be added to the protocol without the panel
+// being taught to coalesce it.
+const STREAMING_LOG_TYPES = ['chunk', 'thought'];
+
+// Holds the line still being appended to, or null.
+let openStream = null;
+
+function appendLog(ev) {
+  const log = $('log');
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 40;
+  const type = String(ev.type || 'log');
+  const streaming = STREAMING_LOG_TYPES.includes(type);
+  const key = type + '|' + (ev.nodeId || '') + '|' + (ev.taskId || '');
+
+  // Continue the open line when this is another fragment of the same run. The DOM is the only
+  // source of truth here: the line must still be attached and still be the last one, because
+  // `log-clear` empties the panel and the 1200-line cap trims the front. Appending to a line
+  // that has left the panel would drop that text with no visible symptom at all, and clearing
+  // needs no bookkeeping of its own as a result.
+  if (streaming && openStream && openStream.key === key && openStream.el.isConnected && log.lastElementChild === openStream.el) {
+    openStream.textNode.appendData(String(ev.text || ''));
+    if (atBottom) log.scrollTop = log.scrollHeight;
+    return;
+  }
+
+  const div = document.createElement('div');
+  div.className = 'ev-' + type;
+  const node = nodeNames.get(ev.nodeId)?.name || (ev.nodeId || '').slice(0, 10);
+  let text = ev.text || '';
+  if (type === 'task-state' || type === 'done') text = '· ' + text;
+  div.innerHTML = `<span class="t">${esc((ev.ts||'').slice(11,19))}</span><span class="n">${esc(node)}</span>`;
+  // A text node rather than escaped markup: the fragments are appended to it as they arrive,
+  // and model output must never be parsed as HTML on the way in.
+  const textNode = document.createTextNode(String(text));
+  div.appendChild(textNode);
+  // "Nothing is running and nothing will move until you answer." A browser user should not have to
+  // be handed a shell command: this page can answer it as it stands — same node, tick 续接上次会话,
+  // type the reply — so say that where the question appears. The instruction lives in the page
+  // rather than in the event, because it names this page's own controls.
+  if (type === 'needs-input') {
+    const hint = document.createElement('div');
+    hint.className = 'needs-input-hint';
+    hint.textContent = ev.data && ev.data.contextId
+      ? '回答它：在下面「给指定节点发任务」里选同一个节点，勾上「续接上次会话」，把回答填进去再发送。'
+      : '回答它：在下面「给指定节点发任务」里选同一个节点，把回答填进去再发送（这次没拿到会话 id，可能会开一段新会话）。';
+    div.appendChild(hint);
+  }
+  log.appendChild(div);
+  openStream = streaming ? { key, el: div, textNode } : null;
+  while (log.childElementCount > 1200) log.removeChild(log.firstChild);
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+$('log-clear').onclick = () => { $('log').innerHTML = ''; };
+$('refresh').onclick = () => { loadNodes(); loadTasks(); loadApprovals(); };
+$('tasks-refresh').onclick = loadTasks;
+
+function connect() {
+  const es = new EventSource('/api/stream?after=' + lastSeq);
+  es.onopen = () => { $('conn').textContent = '已连接'; $('conn').className = 'chip ok'; };
+  es.onerror = () => { $('conn').textContent = '重连中…'; $('conn').className = 'chip err'; };
+  es.onmessage = (m) => {
+    let ev; try { ev = JSON.parse(m.data); } catch { return; }
+    if (ev.seq) lastSeq = Math.max(lastSeq, ev.seq);
+    $('s-events').textContent = lastSeq;
+    // Agent reasoning goes to the chat panel; everything else to the raw event log.
+    // Sending agent events to both would bury the node events in model chatter.
+    if (ev.scope === 'agent') {
+      appendAgent(ev);
+      if (ev.type === 'agent-final' || ev.type === 'agent-error') {
+        agentBusy = false;
+        $('ag-send').disabled = false;
+        loadTasks();
+      }
+      return;
+    }
+    appendLog(ev);
+    if (ev.type === 'approval-requested') loadApprovals();
+    if (ev.type === 'done' || ev.type === 'error') { loadTasks(); loadApprovals(); }
+  };
+}
+
+(async function init() {
+  // Before the first event can arrive, so an early run is folded according to the saved choice
+  // rather than the default.
+  loadDisplayOptions();
+  await loadNodes(); await loadTasks(); await loadApprovals(); await loadAgentConfig(); await loadLlmConfig();
+  // Show only the fields the default transport actually uses. Without this the URL box and
+  // every SSH box were visible at once on first load, with no indication which ones applied
+  // — a large part of why the form could not be read.
+  syncNodeForm();
+  const st = await api('/api/status');
+  lastSeq = st.lastSeq || 0;
+  $('s-events').textContent = lastSeq;
+  connect();
+  setInterval(() => { loadApprovals(); }, 5000);
+  setInterval(() => { loadTasks(); }, 8000);
+})();
+</script>
+</body>
+</html>

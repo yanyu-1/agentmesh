@@ -1,0 +1,102 @@
+name: Bug report
+description: 报告一个可复现的缺陷
+title: '[bug] '
+labels: ['bug', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **先脱敏再提交。** 不要粘贴真实的密码、token、私钥、主机地址或用户名。
+        请把它们替换成 `10.0.0.5` / `user` / `<token>` 之类的占位符。
+
+        安全问题（凭据泄漏、审批绕过、命令注入等）**不要开公开 issue**，
+        请走 [SECURITY.md](../blob/main/SECURITY.md) 里的私密渠道。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 实际发生了什么
+      description: 贴出你真实看到的输出（已脱敏）。原样粘贴比转述有用得多。
+      placeholder: |
+        运行的命令：
+        $ mesh send ...
+
+        实际输出：
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你期望发生什么
+      description: 如果文档里写了你期望的行为，请指出是哪一份、哪一节。
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 最小复现步骤
+      description: |
+        从干净状态开始的最短路径。如果只在特定配置下出现，请说明配置形状（**不要贴凭据值**）。
+        如果缺陷是偶发的，请说明你跑了几次、失败几次——偶发比必失败更需要这个数字。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: 涉及的传输 / 适配器
+      multiple: true
+      options:
+        - acp (stdio，通常走 SSH)
+        - a2a (HTTP JSON-RPC + SSE)
+        - opencode (HTTP + /event)
+        - cli (oneshot 子进程)
+        - Web 控制台
+        - CLI (mesh 命令本身)
+        - 不确定 / 其他
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node 版本
+      description: 输出 `node --version` 的结果
+      placeholder: v24.16.0
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: Windows 11 / Ubuntu 24.04 / macOS 15
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: AgentMesh 版本或 commit
+      description: `package.json` 里的版本号，或 `git rev-parse --short HEAD`
+      placeholder: 0.1.0 / a1b2c3d
+    validations:
+      required: true
+
+  - type: input
+    id: peer
+    attributes:
+      label: 被管智能体与版本
+      description: 如果涉及具体的对端（如 Hermes / opencode / 某个 A2A 实现），请写名称与版本
+      placeholder: Hermes 0.21.3 / opencode 1.18.31 / 自建 A2A 服务
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已经把输出里的主机地址、用户名、密码、token、私钥全部脱敏
+          required: true
+        - label: 我在最新 `main` 上确认过这个问题仍然存在
+          required: true

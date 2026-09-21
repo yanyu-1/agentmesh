@@ -1,0 +1,37 @@
+# ---- local control-plane state -------------------------------------------------
+# registry + SQLite store created by AGENTMESH_HOME
+.agentmesh/
+# a repo-local AGENTMESH_HOME (e.g. "myproject.agentmesh-sec")
+*.agentmesh-sec/
+node_modules/
+npm-debug.log*
+
+# ---- credentials: never commit these ------------------------------------------
+.ssh/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+secrets.env
+
+# ---- research corpus -----------------------------------------------------------
+# 58MB of raw third-party material fetched by tools/fetch.mjs. Regenerable, and it
+# is other people's content — it must not be redistributed through this repo.
+research/
+
+# ---- verification / debug output ----------------------------------------------
+logs/
+cache/
+
+# ---- editor + OS noise --------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- runtime junk -------------------------------------------------------------
+*.log

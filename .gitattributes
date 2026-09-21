@@ -1,0 +1,23 @@
+# Normalize line endings so contributors on Linux/macOS and Windows produce
+# identical diffs. This project is developed on Windows, so without this the very
+# first cross-platform PR would rewrite every line.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.gz binary
+
+# SQLite stores (if a fixture ever lands in the repo)
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# GitHub linguist: keep generated/vendored prose out of language stats
+*.md text

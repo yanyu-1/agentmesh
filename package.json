@@ -1,0 +1,61 @@
+{
+  "name": "agentmesh",
+  "version": "0.1.0",
+  "description": "AgentMesh - a cross-machine control plane for heterogeneous AI agents (ACP / A2A / HTTP), with zero runtime dependencies",
+  "license": "MIT",
+  "author": "yanyu-1",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "bin": {
+    "mesh": "bin/mesh.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "USAGE.md",
+    "ACCEPTANCE.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "agent",
+    "ai-agent",
+    "multi-agent",
+    "orchestrator",
+    "control-plane",
+    "acp",
+    "agent-client-protocol",
+    "a2a",
+    "agent2agent",
+    "opencode",
+    "ssh",
+    "cli",
+    "zero-dependencies"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yanyu-1/agentmesh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yanyu-1/agentmesh/issues"
+  },
+  "homepage": "https://github.com/yanyu-1/agentmesh#readme",
+  "scripts": {
+    "test": "node test/protocol.test.js && node test/args.test.js && node test/a2a-adapter.test.js && node test/opencode-adapter.test.js && node test/http.test.js && node test/net.test.js && node test/llm.test.js && node test/orchestrator.test.js && node test/acp-lifecycle.test.js && node test/cli-cancel.test.js && node test/approval.test.js && node test/fleet.test.js && node test/shared-context.test.js && node test/secrets.test.js && node test/store.test.js && node test/ssh.test.js && node test/web.test.js && node test/ui-events.test.js",
+    "verify:ssh": "node tools/verify-ssh-acp.mjs",
+    "verify:approval": "node tools/verify-approval.mjs",
+    "verify:lan": "node tools/verify-lan.mjs",
+    "verify:a2a": "node tools/verify-a2a.mjs",
+    "verify:agent": "node tools/verify-agent.mjs",
+    "verify:console": "node tools/verify-console.mjs",
+    "check:docs": "node tools/check-docs.mjs",
+    "check:ui": "node tools/check-ui.selftest.mjs && node tools/check-ui.mjs",
+    "test:runner": "node --test test/",
+    "mesh": "node bin/mesh.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

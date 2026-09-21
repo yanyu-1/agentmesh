@@ -1,0 +1,60 @@
+name: Feature request
+description: 提出一个功能或改进
+title: '[feat] '
+labels: ['enhancement', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        在写之前，请先看一眼 [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) 第 2 节：
+        **本项目零运行时依赖，这是硬约束。** 依赖方案的提案需要先论证内置模块做不到。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题
+      description: |
+        描述你遇到的实际场景，而不是你想要的实现。
+        "我在 20 台机器上派发任务时 X 很麻烦" 比 "加一个 --foo 参数" 有价值得多。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你设想的做法
+      description: 如果你已经想过实现方式，写在这里。不确定也没关系。
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你考虑过的替代方案
+      description: 包括"现在是怎么绕过去的"——这通常是最有用的一条信息。
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及的范围
+      multiple: true
+      options:
+        - 协议层 (acp / a2a / jsonrpc / states)
+        - 适配器 (新增一种 agent 类型)
+        - 传输 (ssh / http / spawn)
+        - 编排 (orchestrator / fleet / llm)
+        - 状态与凭据 (registry / store / secrets)
+        - CLI
+        - Web 控制台
+        - 文档与验证工具
+        - 其他
+
+  - type: checkboxes
+    id: contrib
+    attributes:
+      label: 你是否愿意提交 PR
+      options:
+        - label: 我愿意自己实现并提交 PR
+        - label: 我可以帮忙测试（需要在真实主机上验证）

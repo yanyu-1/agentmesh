@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege: the workflow only reads the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.x is the documented floor (node:sqlite); 24.x is what we develop on.
+        node: ['22.x', '24.x']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # NOTE: there is deliberately no `npm install` step. The project has zero
+      # dependencies (see CONTRIBUTING.md §2), so a green build here also proves
+      # that property still holds — if someone adds a dependency, this job will
+      # fail at the first `require`/`import` instead of silently installing it.
+      - name: Assert the repo is still dependency-free
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const d = Object.keys(p.dependencies || {});
+            const dd = Object.keys(p.devDependencies || {});
+            if (d.length || dd.length) {
+              console.error('dependencies are not allowed:', [...d, ...dd].join(', '));
+              process.exit(1);
+            }
+            console.log('no dependencies — ok');
+          "
+
+      - name: Run the test suite
+        run: npm test
+
+      - name: Cross-document consistency
+        run: npm run check:docs
+
+      - name: Web console static self-check
+        run: npm run check:ui
+
+  # The verify-* scripts are NOT run here: they need a real sshd, a real remote
+  # agent, or a real model endpoint. They are documented in CONTRIBUTING.md §3 and
+  # their results are recorded by hand in ACCEPTANCE.md.
