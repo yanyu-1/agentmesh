@@ -17,6 +17,13 @@ import { renderEvent, table, die, info, ok, color, stateBadge } from './render.j
 import { runAgent, READ_ONLY_TOOLS, DISPATCH_TOOLS, AGENT_TOOLS } from '../core/orchestrator.js';
 import { llmConfig, listModels, llmReady, llmConfigPath, readLlmConfigFile } from '../core/llm.js';
 import { loadSecrets, listSecrets, writeSecret, removeSecret, secretsPath } from '../core/secrets.js';
+import {
+  usersPath,
+  listUsers,
+  setUserPassword,
+  removeUser,
+  MIN_PASSWORD_LENGTH,
+} from '../core/auth.js';
 
 const VERSION = '0.1.0';
 
@@ -80,6 +87,8 @@ export async function main(argv) {
       return cmdServe(rest, flags);
     case 'secrets':
       return cmdSecrets(rest, flags);
+    case 'auth':
+      return cmdAuth(rest, flags);
     case 'agent':
       return cmdAgent(rest, flags);
     default:
@@ -1389,7 +1398,149 @@ async function agentRepl(fleet, policy, flags) {
  */
 async function cmdServe(rest, flags) {
   const { startServer } = await import('../web/server.js');
-  return startServer({ port: int(flags.port, 7331), host: flags.host || '127.0.0.1', open: bool(flags.open, false) });
+  const host = flags.host || '127.0.0.1';
+  try {
+    return await startServer({ port: int(flags.port, 7331), host, open: bool(flags.open, false) });
+  } catch (err) {
+    // A refusal to bind is a configuration mistake with a one-line fix, so it gets an explanation
+    // and an exit code rather than a stack trace. The two messages that arrive here are "no
+    // accounts on a public interface" and "the accounts file is unreadable", and both are the
+    // server declining to start open — which is the point, so it must not look like a crash.
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`${color.red('error:')} the console did not start.\n\n${message}\n`);
+    return 1;
+  }
+}
+
+/**
+ * `mesh auth` — the accounts that may open the console.
+ *
+ * Passwords reach this command through a hidden prompt or stdin, never as an argument: an argument
+ * is visible to every process on the machine through `ps`, and lands in the shell history. They are
+ * stored as an scrypt hash, so this command cannot show anyone their password back — the only way to
+ * recover a lost one is to set a new one, which is the correct property for a login credential.
+ *
+ * @param {string[]} rest
+ * @param {Record<string, any>} flags
+ */
+async function cmdAuth(rest, flags) {
+  const sub = rest[0] || 'list';
+  const name = rest[1];
+  const path = usersPath();
+
+  if (sub === 'path') {
+    process.stdout.write(`${path}\n`);
+    return 0;
+  }
+
+  if (sub === 'list' || sub === 'ls') {
+    let users;
+    try {
+      users = listUsers();
+    } catch (err) {
+      process.stderr.write(`${color.red('error:')} ${err instanceof Error ? err.message : String(err)}\n`);
+      process.stderr.write(`  the console will refuse to start while this file is unreadable\n`);
+      return 1;
+    }
+    if (bool(flags.json)) {
+      process.stdout.write(`${JSON.stringify({ path, users }, null, 2)}\n`);
+      return 0;
+    }
+    process.stdout.write(`${color.bold('console accounts')}  ${path}\n`);
+    if (!users.length) {
+      process.stdout.write(`  (none) — the console is open, and only binds 127.0.0.1 while it is.\n`);
+      process.stdout.write(`  create one:  mesh auth add ${process.env.USER || process.env.USERNAME || '<name>'}\n`);
+      process.stdout.write(
+        `  ${color.dim('anything other than --host 127.0.0.1 refuses to start without an account')}\n`,
+      );
+      return 0;
+    }
+    for (const u of users) {
+      const created = u.createdAt ? u.createdAt.slice(0, 10) : '?';
+      process.stdout.write(`  ${pad(u.name, 24)} ${color.dim(`created ${created}`)}\n`);
+    }
+    process.stdout.write(`  ${color.dim('passwords are scrypt hashes and cannot be shown — re-set with: mesh auth passwd <name>')}\n`);
+    return 0;
+  }
+
+  if (sub === 'add' || sub === 'passwd' || sub === 'password') {
+    if (!name) {
+      process.stderr.write(`${color.red('error:')} usage: mesh auth ${sub === 'add' ? 'add' : 'passwd'} <name>\n`);
+      return 2;
+    }
+    const requiredNew = sub === 'add';
+    // No `--password` flag on purpose: command-line arguments are readable by every process on the
+    // machine (`ps`) and are written to the shell history. stdin is the scriptable path.
+    let password = undefined;
+    if (bool(flags.stdin) || !process.stdin.isTTY) {
+      password = (await readAllStdin()).trim();
+    } else {
+      if (requiredNew) {
+        process.stdout.write(
+          `${color.dim(`password for ${name} (at least ${MIN_PASSWORD_LENGTH} characters, input hidden)`)}\n`,
+        );
+      }
+      password = await promptHidden(`password for ${name}: `);
+      const again = await promptHidden('repeat to confirm: ');
+      if (password !== again) {
+        process.stderr.write(`${color.red('error:')} the two entries did not match; nothing was written\n`);
+        return 1;
+      }
+    }
+    let result;
+    try {
+      result = setUserPassword(name, password, { requireNew: requiredNew });
+    } catch (err) {
+      process.stderr.write(`${color.red('error:')} ${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+    ok(`${result.created ? 'created' : 'updated'} account ${result.user} in ${result.path}`);
+    // Said plainly, because the alternative is discovering it by being signed out.
+    process.stdout.write(`  ${color.dim('any session already signed in as this user stops working immediately')}\n`);
+    // Point at the actual next step. This used to interpolate `flags.host`, which is undefined
+    // unless the operator passed `--host` to a command that does not take one — so it printed
+    // "mesh serve --host undefined" in the ordinary case.
+    process.stdout.write(
+      `  ${color.dim('sign in at the console, or expose it with: mesh serve --host 0.0.0.0 (USAGE §7.8)')}\n`,
+    );
+    return 0;
+  }
+
+  if (sub === 'remove' || sub === 'rm' || sub === 'delete') {
+    if (!name) {
+      process.stderr.write(`${color.red('error:')} usage: mesh auth remove <name>\n`);
+      return 2;
+    }
+    if (!bool(flags.force)) {
+      const known = listUsers().map((u) => u.name);
+      if (!known.includes(name)) {
+        process.stderr.write(`${color.red('error:')} no account named '${name}'\n`);
+        return 1;
+      }
+    }
+    try {
+      const removed = removeUser(name);
+      if (!removed) {
+        process.stderr.write(`${color.red('error:')} no account named '${name}'\n`);
+        return 1;
+      }
+    } catch (err) {
+      process.stderr.write(`${color.red('error:')} ${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+    ok(`removed account ${name}`);
+    // Removing the last account opens the console again, and the server's public-interface guard
+    // then refuses to bind anything but loopback. Say so, because the next `mesh serve --host 0.0.0.0`
+    // would otherwise fail with a message about accounts the operator thinks they still have.
+    if (listUsers().length === 0) {
+      process.stdout.write(`  ${color.yellow('no accounts left — the console is open again, and will only bind 127.0.0.1')}\n`);
+    }
+    return 0;
+  }
+
+  process.stderr.write(`${color.red('error:')} unknown subcommand 'auth ${sub}'\n`);
+  process.stderr.write(`  usage: mesh auth [list | add <name> | passwd <name> | remove <name> | path]\n`);
+  return 2;
 }
 
 function cmdPresets() {

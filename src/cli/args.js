@@ -231,6 +231,19 @@ SECRETS
   environment at startup, so 'ssh.passwordEnv = NAME' survives a restart without retyping.
   The file is plain text protected by its permissions — an SSH key avoids the secret entirely.
 
+CONSOLE ACCOUNTS
+  mesh auth                          which accounts exist (same as 'mesh auth list')
+  mesh auth add <name>               create one (password prompted hidden; --stdin for scripts)
+  mesh auth passwd <name>            change a password; sessions opened with the old one end
+  mesh auth remove <name>            delete one (the last account cannot be removed)
+
+  Accounts are optional while the console binds 127.0.0.1, and mandatory otherwise:
+  'mesh serve --host <anything else>' refuses to start with no accounts, because this
+  console can dispatch to every agent and approve anything it asks.
+  Passwords are stored as scrypt hashes in ~/.agentmesh/console-users.json (mode 0600),
+  so they cannot be read back — only re-set. Note that the console speaks plain HTTP:
+  sign-in stops casual access, not someone watching the network. See USAGE §7.8.
+
 APPROVALS
   mesh approvals                     parked approvals awaiting a decision
   mesh approve <approvalId> --allow  answer one (or --deny / --option <id>)
@@ -257,6 +270,8 @@ AGENT OPTIONS
 
 SERVE
   mesh serve [--port 7331]           Web console + approval API
+  mesh serve --host 0.0.0.0          reachable from other machines (requires an account;
+                                     plain HTTP — put it behind TLS, see USAGE §7.8)
   mesh presets                       list built-in agent presets
 
 COMMON OPTIONS

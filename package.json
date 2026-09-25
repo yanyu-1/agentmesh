@@ -44,7 +44,7 @@
   },
   "homepage": "https://github.com/yanyu-1/agentmesh#readme",
   "scripts": {
-    "test": "node test/protocol.test.js && node test/args.test.js && node test/a2a-adapter.test.js && node test/opencode-adapter.test.js && node test/http.test.js && node test/net.test.js && node test/llm.test.js && node test/orchestrator.test.js && node test/acp-lifecycle.test.js && node test/cli-cancel.test.js && node test/approval.test.js && node test/fleet.test.js && node test/shared-context.test.js && node test/secrets.test.js && node test/store.test.js && node test/ssh.test.js && node test/web.test.js && node test/ui-events.test.js",
+    "test": "node test/protocol.test.js && node test/args.test.js && node test/a2a-adapter.test.js && node test/opencode-adapter.test.js && node test/http.test.js && node test/net.test.js && node test/llm.test.js && node test/orchestrator.test.js && node test/acp-lifecycle.test.js && node test/cli-cancel.test.js && node test/approval.test.js && node test/fleet.test.js && node test/shared-context.test.js && node test/secrets.test.js && node test/auth.test.js && node test/store.test.js && node test/ssh.test.js && node test/web.test.js && node test/ui-events.test.js",
     "verify:ssh": "node tools/verify-ssh-acp.mjs",
     "verify:approval": "node tools/verify-approval.mjs",
     "verify:lan": "node tools/verify-lan.mjs",

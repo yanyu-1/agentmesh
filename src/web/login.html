@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- The sign-in page is its own document because the console is a single page that needs a
+     session to render anything at all. Shipping it separately also means the console's HTML is
+     never sent to an unauthenticated visitor, so nothing about the fleet leaks in a page source. -->
+<title>AgentMesh 控制台 · 登录</title>
+<style>
+  /* Same tokens as ui.html. A sign-in page that looks like a different product is how people end
+     up typing their password into the wrong thing, so this is deliberately the console's palette. */
+  :root {
+    color-scheme: dark;
+    --bg: #080b11;
+    --bg-grad:
+      radial-gradient(1100px 520px at 85% -10%, rgba(111, 157, 255, .09), transparent 60%),
+      radial-gradient(800px 480px at -8% -6%, rgba(62, 198, 243, .06), transparent 55%);
+    --panel: #10161f; --sunken: #0a0e15;
+    --line: #1f2937; --line2: #2c3a4f;
+    --fg: #e7ecf5; --label: #b7c1d3; --muted: #8591a6; --faint: #626d82;
+    --accent: #6f9dff; --accent-soft: rgba(111, 157, 255, .14); --accent-fg: #081226;
+    --err: #f47068; --err-soft: rgba(244, 112, 104, .12);
+    --btn: #1a2331; --btn-hover: #243144;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .28);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --bg: #eef1f7;
+      --bg-grad:
+        radial-gradient(1100px 520px at 85% -10%, rgba(47, 109, 246, .08), transparent 60%),
+        radial-gradient(800px 480px at -8% -6%, rgba(14, 165, 233, .06), transparent 55%);
+      --panel: #ffffff; --sunken: #f1f4f9;
+      --line: #dde4ee; --line2: #c4cfe0;
+      --fg: #17202e; --label: #3c485c; --muted: #627089; --faint: #8a94a8;
+      --accent: #2f6df6; --accent-soft: rgba(47, 109, 246, .12); --accent-fg: #ffffff;
+      --err: #d23636; --err-soft: rgba(210, 54, 54, .09);
+      --btn: #e9eef6; --btn-hover: #dde4ef;
+      --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 10px 26px rgba(16, 24, 40, .07);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+    color: var(--fg);
+    background-color: var(--bg); background-image: var(--bg-grad); background-attachment: fixed;
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans SC",
+          "Microsoft YaHei", sans-serif;
+  }
+  .card {
+    width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 26px 24px 22px;
+  }
+  h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: .2px; }
+  .sub { margin: 0 0 20px; color: var(--muted); font-size: 12.5px; }
+  label { display: block; margin: 0 0 6px; color: var(--label); font-size: 12.5px; font-weight: 600; }
+  fieldset { border: 0; margin: 0; padding: 0; }
+  input {
+    width: 100%; padding: 10px 12px; margin-bottom: 14px; color: var(--fg);
+    background: var(--sunken); border: 1px solid var(--line2); border-radius: 9px;
+    font: inherit;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  button {
+    width: 100%; padding: 10px 12px; border: 0; border-radius: 9px; cursor: pointer;
+    background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 700;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .6; cursor: progress; }
+  .err {
+    display: none; margin: 0 0 14px; padding: 9px 11px; border-radius: 9px; font-size: 12.5px;
+    color: var(--err); background: var(--err-soft); border: 1px solid var(--err);
+  }
+  .err.on { display: block; }
+  .foot { margin: 16px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); }
+</style>
+</head>
+<body>
+<main class="card">
+  <h1>AgentMesh 控制台</h1>
+  <p class="sub">这个控制台可以向所有已注册的智能体派发任务并批准它们提出的操作，所以需要先登录。</p>
+
+  <p class="err" id="err" role="alert" aria-live="polite"></p>
+
+  <form id="form" method="post" action="/api/login">
+    <fieldset>
+      <label for="user">用户名</label>
+      <input id="user" name="user" type="text" autocomplete="username" autocapitalize="none"
+             spellcheck="false" required autofocus />
+
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+      <button id="go" type="submit">登录</button>
+    </fieldset>
+  </form>
+
+  <p class="foot">
+    账号由这台机器上的 <code>mesh auth add &lt;用户名&gt;</code> 创建，密码以 scrypt 哈希保存、不存明文。<br />
+    忘了密码：在本机跑 <code>mesh auth passwd &lt;用户名&gt;</code>。
+  </p>
+</main>
+
+<script>
+  const form = document.getElementById('form');
+  const err = document.getElementById('err');
+  const go = document.getElementById('go');
+
+  function show(message) {
+    err.textContent = message;
+    err.classList.add('on');
+  }
+
+  // Where to go after signing in. The server validates this too — the page only uses it to stay
+  // put, and a value that is not a path on this console is ignored rather than trusted.
+  const next = new URLSearchParams(location.search).get('next') || '/';
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    go.disabled = true;
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        // JSON, because the server refuses anything else: a cross-site <form> cannot send this
+        // content type, which is what makes it a CSRF defence rather than a formatting preference.
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          user: document.getElementById('user').value,
+          password: document.getElementById('password').value,
+        }),
+      });
+      let body = {};
+      try { body = await res.json(); } catch { /* a proxy may answer with HTML */ }
+      if (res.ok) {
+        location.href = next.startsWith('/') && !next.startsWith('//') ? next : '/';
+        return;
+      }
+      show(body.error || ('登录失败（HTTP ' + res.status + '）'));
+    } catch (e) {
+      show('连不上控制台：' + (e && e.message ? e.message : String(e)));
+    }
+    go.disabled = false;
+    document.getElementById('password').value = '';
+    document.getElementById('password').focus();
+  });
+</script>
+</body>
+</html>

@@ -1,78 +1,115 @@
-# AgentMesh — 跨机器统一智能体控制面
+# AgentMesh — 跨机器 AI 智能体统一控制台
 
-> 在一台电脑上，统一管理分布在不同服务器上的异构智能体：发任务、看实时输出、远程作答审批、续接会话。
-> 零依赖（只用 Node 内置模块）、协议对齐 ACP v1 与 A2A v1.0、**远端不需要开任何入站端口**。
+> **一句话介绍：**  
+> 在一台电脑上，统一管理、调度和监控分布在多台机器上的各种 AI 智能体（Agent）。  
+> **零依赖**（仅用 Node.js 内置模块）、**远端免开入站端口**（走安全 SSH 隧道）、**原生适配主流协议**（ACP、A2A、HTTP API 及通用 CLI）。
 
-📖 **要上手操作，看 [`USAGE.md`](USAGE.md)** —— 完整使用手册（每条命令、每种接法、故障排查）。
-本文件是概览与设计说明。验证过什么、没验证什么见 [`ACCEPTANCE.md`](ACCEPTANCE.md)。
-
-```
-        C 电脑（控制面）                             服务器 A / B ···（被管节点）
-┌──────────────────────────────────┐
-│  mesh CLI        mesh Web 控制台  │
-│  ───────────────────────────────  │
-│  Fleet（扇出 / 竞速 / 聚合）       │
-│  Registry（节点注册表）            │
-│  Store（任务+事件+审批, SQLite）    │
-│  ───────────────────────────────  │
-│  Adapters                          │
-│   ├─ a2a       (HTTP JSON-RPC+SSE) │────HTTP───▶ Hermes A2A 端口
-│   ├─ acp       (stdio JSON-RPC)    │────SSH────▶ hermes-acp / opencode acp / gemini
-│   ├─ opencode  (HTTP+SSE /event)   │────HTTP───▶ opencode serve
-│   └─ cli       (oneshot 子进程)     │────SSH────▶ 任意 CLI agent
-└──────────────────────────────────┘
-```
-
-规划与调研见 [`PLAN.md`](PLAN.md)（逐条带出处）。
-验收记录见 [`ACCEPTANCE.md`](ACCEPTANCE.md)。
-
-> **关于 `research/`：** 原始调研语料（第三方协议文档、官方 schema、抓取缓存，约 58 MB）**不随仓库分发**——它大部分是别人的内容，且可完全再生。需要时按 `research/urls-*.txt` 里的清单用 `node tools/fetch.mjs` 重新抓取即可。
+📖 **要上手操作，看 [`USAGE.md`](USAGE.md)** —— 完整使用手册（每条命令、每种接法、故障排查）。  
+设计初衷与实现规划见 [`PLAN.md`](PLAN.md)；测试覆盖与验证记录见 [`ACCEPTANCE.md`](ACCEPTANCE.md)。
 
 ---
 
-## 为什么这样设计（四条原则，来自行业调研）
+## 解决什么痛点？
 
-1. **会话与连接解耦。** 连接断了，会话还在 Store 里，可 `--continue` 恢复
-   （A2A 用 `contextId`，ACP 用 `sessionId`）。ACP 与 MCP 在"断点续传"上得出了相反结论，
-   所以不把任何状态托付给传输层。
-2. **审批是可寻址、可恢复的资源。** agent 要授权时不阻塞等 stdin，而是落库成一条 approval，
-   任务转入 `input-required`；在 C 上 `mesh approve` 或 Web 上点一下就恢复。
-5. **凭据只留在节点侧。** 控制面只持有"访问节点所需"的令牌（A2A bearer、SSH key），
-   不持有各 agent 的模型 API key。
-5. **默认安全。** ACP 客户端默认**不**宣告 `fs`/`terminal`（agent 就会用自己的工具在服务器上干活）；
-   审批默认 `deny`；A2A 无 token 不启用；注册表里的密钥不会下发给浏览器。
+如果你在不同机器（本地电脑、NAS、内网开发机、云服务器等）上跑着多个 AI Agent：
+- 本机或服务器里的 **Hermes Agent**
+- 运行在远程机上的 **opencode**
+- 各大厂商推出的 ACP 智能体（如 **Gemini CLI**、**Claude Code ACP**、**Goose**）
+- 各种自定义的命令行 Agent 脚本
+
+你通常会面临这些麻烦：
+1. **到处切终端登录**：需要开一大堆终端窗口，频繁 SSH 到各台服务器手动输入指令。
+2. **难以统一监控**：无法集中查看多台机器上每个任务的运行状态、实时输出日志和工具调用。
+3. **远程交互/审批繁琐**：智能体在远端想执行敏感操作（改文件、运行命令）需要人确认授权时，普通终端直接卡在 stdin 上；一旦网络抖动或终端关闭，任务就直接中断。
+4. **网络配置麻烦**：很多工具要求在远程服务器上开入站端口并暴露公网，存在安全风险，内网穿透也格外折腾。
+
+**AgentMesh 把这些全都收束到你眼前的一台电脑上。**
+
+---
+
+## AgentMesh 能做什么？
+
+```
+               控制端电脑（你的本地 PC）                            被控节点（服务器 / NAS / 本机）
+┌────────────────────────────────────────────────────────┐
+│  mesh CLI   /   mesh Web 控制台 (http://127.0.0.1:7331)  │
+│  ────────────────────────────────────────────────────  │
+│  • 本地智能编排 Agent（自然语言分解并分发任务）           │
+│  • 任务存储与统一状态机（基于 SQLite，支持断点续接）       │
+│  • 异步审批中心（Web 界面一键授权 / 终端异步作答）         │
+│  • 统一多协议适配器（Adapters）                          │
+│     ├─ ACP 适配器      (stdio JSON-RPC)  ──[SSH 隧道]──▶  hermes-acp / opencode acp / gemini
+│     ├─ A2A 适配器      (HTTP+SSE)        ──[HTTP/内网]─▶  Hermes A2A / 标准 A2A 节点
+│     ├─ opencode 适配器 (HTTP /event)     ──[HTTP/内网]─▶  opencode serve
+│     └─ CLI 适配器      (一次性子进程)    ──[SSH/本地]──▶  任意常规命令行 Agent
+└────────────────────────────────────────────────────────┘
+```
+
+1. **统一任务派发与会话管理**：
+   - **你指哪它打哪**（`mesh send`）：明确指定服务器与 Agent，适合脚本和日常操作。
+   - **自然语言编排**（`mesh agent`）：只需说出意图，本机编排 Agent 自动判断该派给哪台机器的哪个 Agent，并把结果原样汇总带回。
+   - **断点续接**：连接即使意外断开，会话仍然保存在本地 SQLite 中，随时可通过 `--continue` 恢复上下文。
+2. **远端免开端口（SSH 隧道）**：
+   - ACP 协议（稳定版规范）基于 stdio 管道运行。
+   - AgentMesh 利用本地系统原生 SSH 管道直接连接远端 Agent，**被控服务器无需开放任何额外 HTTP 端口，只要能 SSH 登录就能管**。
+3. **可挂起的远程异步审批（Human-in-the-loop）**：
+   - 远端智能体请求高危权限时，任务自动挂起并落库为审批项，任务转入 `input-required` 状态。
+   - 你可以在 Web 控制台点击按钮一键放行，或在任意终端执行 `mesh approve` 作答，不再因终端卡死或关闭而丢任务。
+4. **轻量与安全优先**：
+   - **零第三方依赖**：纯 Node.js 实现（利用内置 SQLite、fetch 和原生模块），无需 `npm install`。
+   - **凭据最小化**：控制端仅维护访问节点所必需的 SSH 密钥或端点 Token；目标机器上运行 Agent 所需的大模型 API Key 完全留在节点侧，控制面不集中托管。
+   - **默认安全与本地保护**：Web 控制台默认绑定 `127.0.0.1`（离开本地环回强制要求配置认证账号）；权限审批默认全部拒绝。
+
+---
+
+## 为什么这样设计？（设计原则）
+
+1. **会话与连接解耦**：连接断开，会话还在 Store 里，可 `--continue` 恢复（A2A 用 `contextId`，ACP 用 `sessionId`），不把任何状态托付给易波动的网络传输层。
+2. **审批是可寻址、可恢复的资源**：智能体请求授权时不阻塞等 stdin，而是落库成一条 approval 记录；在 CLI 上 `mesh approve` 或 Web 控制台点一下就能恢复。
+3. **凭据只留在节点侧**：控制面只持有"访问节点所需"的令牌（A2A bearer、SSH key），不持有各智能体的模型 API Key。
+4. **默认安全**：ACP 客户端默认**不**宣告 `fs`/`terminal`（智能体使用服务器自有的工具执行）；审批策略默认 `deny`；A2A 无 token 不启用；注册表里的密钥不会下发给前端。
 
 ### 为什么 ACP 走 SSH 而不是 HTTP
-
-ACP 稳定版的**唯一**传输是 stdio（JSON-RPC + 换行分隔 JSON）——"Streamable HTTP" 至今仍是草案。
-这反而是好事：`ssh host hermes-acp` 就是一条双向 stdio 管道，于是**远端零安装、零端口**，
-只要你能 SSH 就能管。
+ACP 稳定版的传输协议是 stdio（JSON-RPC + 换行分隔 JSON）——"Streamable HTTP" 目前仍是草案。这反而是巨大的工程优势：`ssh host hermes-acp` 就是天然的双向安全 stdio 管道，实现**远端零安装额外网关、零入站端口**，只要能 SSH 就能管。
 
 ---
 
 ## 环境要求
 
-- **Node.js ≥ 22.5**（用到内置 `node:sqlite`）。已在 Node 24.16 上验证。
-- 无 npm 依赖，无需 `npm install`。
+- **Node.js ≥ 22.5.0**（用到内置 `node:sqlite`、全局 `fetch` 等）。已在 Node 24 上验证。
+- **零依赖**：无 npm 第三方依赖，无需运行 `npm install`。
 
 ## 快速开始
 
 ```bash
-# 1) 注册本机 Hermes（走 ACP）
-node bin/mesh.js node add hermes-local --kind hermes --local \
-  --command "$LOCALAPPDATA/hermes/bin/hermes-acp.exe" --cwd /path/to/workdir
+# 1) 启动 Web 控制台（浏览器打开 http://127.0.0.1:7331）
+node bin/mesh.js serve --port 7331
 
-# 2) 探测能力（握手 + Agent 信息 + 鉴权方式）
-node bin/mesh.js probe hermes-local
+# 2) 注册节点（例如通过 SSH 免开端口接入远程服务器上的 Hermes）
+node bin/mesh.js node add server-hermes --kind hermes --ssh 192.168.1.100 --ssh-user root --cwd /srv/work
 
-# 5) 发一个任务
-node bin/mesh.js send hermes-local "列出当前目录并总结这个仓库是做什么的"
+# 3) 探测节点能力（握手、获取 Agent 卡片与鉴权状态）
+node bin/mesh.js probe server-hermes
 
-# 5) 打开 Web 控制台
-node bin/mesh.js serve --port 7331   # 浏览器打开 http://127.0.0.1:7331
+# 4) 向远程节点发一个任务
+node bin/mesh.js send server-hermes "列出当前目录并总结这个项目是做什么的"
 ```
 
-如果 `bin/mesh.js` 在你的 PATH 上（`npm link` 或 `npm i -g .`），把 `node bin/mesh.js` 换成 `mesh` 即可。
+> 提示：如果将 `bin/mesh.js` 加入 PATH（或执行 `npm link`），可直接用 `mesh` 代替 `node bin/mesh.js`。
+
+---
+
+## 两种使用模式：你指定目标，还是只说意图
+
+```bash
+# 模式 A：你指定目标（明确、可预期、适合脚本自动化）
+mesh send nas-hermes "写一个判断素数的 Python 函数"
+
+# 模式 B：你只说意图（本机编排 Agent 查节点列表、自行决策并派发，再把结果带回来）
+mesh agent "让 nas 上的 agent 写一个判断素数的函数，并把完整代码返回给我"
+```
+
+`mesh agent` 是一个在本机运行的编排 Agent 循环：它可以看到你的节点清单与各节点能力，先探测判断、再精准派发，最后原样带回远程答复。它具备完善的权限控制（`--dry-run`、`--read-only`、`--tools`、`--max-steps`）。详见 [USAGE.md §4.7](USAGE.md)。
 
 ---
 
@@ -306,17 +343,21 @@ mesh approve appr_xxxx --allow                 # 恢复
 - `mesh.db` —— SQLite：`tasks` / `events` / `approvals`
 - `llm.json` —— 编排 Agent 的地址与模型（**不含密钥**）
 - `secrets.env` —— **可选**，`mesh secrets set` 写入的密码文件（`0600`，**明文**，只在你自己要求时才存在）
+- `console-users.json` —— **可选**，`mesh auth` 建的控制台账号（`0600`，存 **scrypt 哈希**，**不可还原**）
 
 密码不写进 `nodes.json`：节点里存的是**变量名**。想让它跨重启可用，要么自己在环境变量里设值，要么用
 `mesh secrets set NAME` 把它存进 `secrets.env`——**保护来自文件权限，不是加密**，更优解是改用 SSH 密钥。
 完整说明见 [USAGE.md §7.4](USAGE.md)。
+
+注意这两类密码的存法**故意相反**：SSH 密码必须能还原（要交给 `ssh`），所以只能明文；控制台登录口令
+只需要**校验**，所以存不可逆哈希。见 [USAGE.md §7.8](USAGE.md)。
 
 ---
 
 ## 测试
 
 ```bash
-npm test                            # 217 个用例 / 18 个文件
+npm test                            # 240 个用例 / 19 个文件
 # 等价于逐个直接执行（受限环境下 node --test 要开子进程，可能被拒）：
 node test/protocol.test.js          # ACP 分帧与权限结构、A2A 线格式、SSE、JSON-RPC 双向、状态映射
 node test/args.test.js              # argv 解析：可重复 flag 取值与缺值报错、-- 终止、= 形式、布尔不吞提示词
@@ -381,7 +422,7 @@ A2A 服务端**（`tools/fake-a2a-server.mjs`：强制鉴权、非根路径 RPC�
 见 [`ACCEPTANCE.md`](ACCEPTANCE.md)。
 
 已验证 / 未验证的完整清单见 [`ACCEPTANCE.md`](ACCEPTANCE.md)，含验证过程中抓出的
-62 个真实缺陷及各自的触发条件。
+66 个真实缺陷及各自的触发条件。
 
 ---
 

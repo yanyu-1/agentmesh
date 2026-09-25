@@ -26,19 +26,43 @@ import { join } from 'node:path';
 import { listenOnFetchablePort } from '../src/core/transport/net.js';
 
 /**
- * Start a console against a throwaway AGENTMESH_HOME.
+ * Start a console against a throwaway AGENTMESH_HOME, **signed in**.
  *
  * The registry and the store are files under `meshHome()`, which is read at construction
  * time, so the environment has to be set before anything imports the server.
- * @returns {Promise<{url:string, home:string, close:()=>Promise<void>, json:(p:string,init?:any)=>Promise<any>, status:(p:string,init?:any)=>Promise<{status:number,body:any}>}>}
+ *
+ * The console requires a session as soon as an account exists (see test/auth.test.js for that
+ * behaviour in its own right). These cases are about the node API, so they create one account and
+ * carry its cookie — deliberately through the **real sign-in route** rather than any switch that
+ * turns authentication off. A bypass would mean none of these cases exercise the path the operator
+ * actually uses, which is exactly how an API and its own front door drift apart.
+ *
+ * @param {{password?:string, user?:string}} [opts]
+ * @returns {Promise<{url:string, home:string, user:string, password:string, cookie:string, close:()=>Promise<void>, json:(p:string,init?:any)=>Promise<any>, status:(p:string,init?:any)=>Promise<{status:number,body:any}>}>}
  */
-async function console_() {
+async function console_(opts = {}) {
   const home = mkdtempSync(join(tmpdir(), 'agentmesh-web-'));
   process.env.AGENTMESH_HOME = home;
+  const user = opts.user ?? 'tester';
+  const password = opts.password ?? 'correct-horse-battery';
+  const { setUserPassword } = await import('../src/core/auth.js');
+  setUserPassword(user, password);
   const { createConsole } = await import(`../src/web/server.js?home=${encodeURIComponent(home)}`);
   const c = await createConsole({ port: 0, host: '127.0.0.1' });
-  const status = async (p, init) => {
-    const res = await fetch(c.url + p, init);
+
+  // Sign in for real, then attach the cookie to every call.
+  const login = await fetch(`${c.url}/api/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user, password }),
+  });
+  if (!login.ok) throw new Error(`test setup could not sign in: ${login.status} ${await login.text()}`);
+  const setCookie = login.headers.getSetCookie?.() ?? [login.headers.get('set-cookie') ?? ''];
+  const cookie = setCookie.map((v) => String(v).split(';')[0]).join('; ');
+
+  const status = async (p, init = {}) => {
+    const headers = { cookie, ...(init.headers ?? {}) };
+    const res = await fetch(c.url + p, { ...init, headers });
     const text = await res.text();
     let body;
     try {
@@ -46,7 +70,7 @@ async function console_() {
     } catch {
       body = text;
     }
-    return { status: res.status, body };
+    return { status: res.status, body, headers: res.headers };
   };
   const json = async (p, init) => {
     const { status: s, body } = await status(p, init);
@@ -57,6 +81,10 @@ async function console_() {
   return {
     url: c.url,
     home,
+    user,
+    password,
+    cookie,
+    console: c,
     close: async () => {
       await c.close();
       rmSync(home, { recursive: true, force: true });
@@ -389,10 +417,13 @@ test('an apiKeyEnv is stored as a NAME, and its value is only read at use time',
 test('GET / returns the console page and it references the fields that exist', async () => {
   const c = await console_();
   try {
-    const res = await fetch(c.url + '/');
-    assert.equal(res.status, 200);
-    assert.match(res.headers.get('content-type') || '', /text\/html/);
-    const html = await res.text();
+    // Through the helper, so it carries the session cookie. A bare `fetch` here would now get the
+    // sign-in page — which is the correct behaviour and is asserted in test/auth.test.js; this case
+    // is about what a signed-in operator receives.
+    const { status, body, headers } = await c.status('/');
+    assert.equal(status, 200);
+    assert.match(headers.get('content-type') || '', /text\/html/);
+    const html = typeof body === 'string' ? body : JSON.stringify(body);
     for (const id of ['a-host', 'a-user', 'a-port', 'a-command', 'a-secret', 'a-pwenv', 'a-edit', 'lc-base', 'lc-model', 'lc-key']) {
       // `a-edit` is a data-attribute template, not an id; skip it here.
       if (id === 'a-edit') continue;
@@ -419,9 +450,9 @@ test('the served page is the readable one: grouped fields, no inline layout, eve
   // notices the difference between the file on disk and the bytes a running console emits.
   const c = await console_();
   try {
-    const res = await fetch(c.url + '/');
-    assert.equal(res.status, 200);
-    const html = await res.text();
+    const { status, body } = await c.status('/');
+    assert.equal(status, 200);
+    const html = typeof body === 'string' ? body : JSON.stringify(body);
 
     const fieldsets = (html.match(/<fieldset/g) || []).length;
     assert.ok(fieldsets >= 4, `the form must be split into named <fieldset> groups, found ${fieldsets}`);

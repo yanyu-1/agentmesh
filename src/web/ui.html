@@ -424,6 +424,8 @@
     </div>
   </div>
   <span class="chip" id="conn">connecting…</span>
+  <span class="chip" id="who"></span>
+  <button id="logout" type="button" hidden title="结束这个会话，并停止接收事件">登出</button>
   <div class="stats">
     <span class="stat"><b id="s-nodes">0</b>节点</span>
     <span class="stat"><b id="s-tasks">0</b>任务</span>
@@ -719,12 +721,54 @@ function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;'
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
+  // A session can end while the page is open — it expired, or someone ran `mesh auth passwd`. The
+  // console cannot render anything useful at that point and every panel would fill with "HTTP 401",
+  // so go back to the sign-in page and return here afterwards. Without this the page just looks
+  // broken, which is the worst way to learn that a session ended.
+  if (res.status === 401) {
+    location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+    throw new Error('session ended — signing in again');
+  }
   const text = await res.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
   if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
   return body;
 }
+
+/** Who is signed in, shown in the header, and the sign-out button beside it. */
+async function loadSession() {
+  try {
+    const s = await api('/api/session');
+    if (!s.authRequired) {
+      $('who').textContent = '';
+      $('who').className = 'chip';
+      $('who').title = '这个控制台还没有账号，仅本机可访问';
+      $('logout').hidden = true;
+      return;
+    }
+    $('who').textContent = s.user ? ('已登录：' + s.user) : '';
+    $('who').className = 'chip ok';
+    $('who').title = s.expiresAt ? ('会话有效至 ' + s.expiresAt) : '';
+    $('logout').hidden = false;
+  } catch (e) {
+    if (String(e.message || '').includes('session ended')) return;
+    $('who').textContent = '登录状态未知';
+    $('who').className = 'chip err';
+  }
+}
+
+$('logout').onclick = async () => {
+  $('logout').disabled = true;
+  try {
+    await api('/api/logout', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+  } catch { /* signing out locally either way */ }
+  location.href = '/login';
+};
 
 // ---------- nodes ----------
 // The form is transport-aware: an HTTP node needs a URL and nothing else, a remote
@@ -1462,6 +1506,16 @@ function connect() {
   const es = new EventSource('/api/stream?after=' + lastSeq);
   es.onopen = () => { $('conn').textContent = '已连接'; $('conn').className = 'chip ok'; };
   es.onerror = () => { $('conn').textContent = '重连中…'; $('conn').className = 'chip err'; };
+  // `EventSource` cannot see the status code, so a refused stream is indistinguishable from a
+  // dropped one — and "重连中…" forever is what a signed-out page would look like. Ask who we are:
+  // if the session ended, go and sign in rather than retrying a request that cannot succeed.
+  es.addEventListener('error', () => {
+    api('/api/session').then((s) => {
+      if (!s.authenticated) {
+        location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+      }
+    }).catch(() => { /* transient: let EventSource reconnect */ });
+  });
   es.onmessage = (m) => {
     let ev; try { ev = JSON.parse(m.data); } catch { return; }
     if (ev.seq) lastSeq = Math.max(lastSeq, ev.seq);
@@ -1487,6 +1541,7 @@ function connect() {
   // Before the first event can arrive, so an early run is folded according to the saved choice
   // rather than the default.
   loadDisplayOptions();
+  await loadSession();
   await loadNodes(); await loadTasks(); await loadApprovals(); await loadAgentConfig(); await loadLlmConfig();
   // Show only the fields the default transport actually uses. Without this the URL box and
   // every SSH box were visible at once on first load, with no indication which ones applied
